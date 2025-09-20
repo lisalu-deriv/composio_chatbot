@@ -1,0 +1,698 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Python Repository Standards & Best Practices
+Based on comprehensive code review and modernization practices
+🏗️ PROJECT STRUCTURE (MANDATORY)
+Standard Layout
+project-name/
+├── src/project_name/              # ✅ ALWAYS use src/ + package namespace
+│   ├── api/                       # RESTful endpoints & DTOs
+│   │   ├── __init__.py
+│   │   ├── routes.py             # FastAPI route definitions
+│   │   └── dto/                  # Data transfer objects
+│   │       ├── requests.py
+│   │       └── responses.py
+│   ├── services/                  # Business logic (plural form)
+│   │   ├── __init__.py
+│   │   └── *.py                  # Service implementations
+│   ├── repositories/              # Data access (full name, not "repo")
+│   │   ├── __init__.py
+│   │   ├── interfaces.py         # Repository patterns
+│   │   └── *_repository.py       # Implementations
+│   ├── models/                    # Domain entities
+│   │   ├── __init__.py
+│   │   ├── enums.py              # Proper enums (StrEnum, IntEnum)
+│   │   └── *.py                  # Pydantic models
+│   ├── config/                    # Configuration management
+│   │   ├── __init__.py
+│   │   └── settings.py           # Pydantic Settings
+│   └── utils/                     # Shared utilities
+│       ├── __init__.py
+│       └── *.py                  # Utility functions
+├── docker/                        # Environment separation
+│   ├── dev/                       # Development containers
+│   │   ├── Dockerfile
+│   │   ├── docker-compose.yml
+│   │   └── .env.dev              # Local only (NOT committed)
+│   └── prod/                      # Production containers
+│       ├── Dockerfile             # Multi-stage, optimized
+│       ├── docker-compose.yml
+│       └── .env.prod             # Local only (NOT committed)
+├── tests/                         # Test organization
+│   ├── __init__.py
+│   ├── test_services/
+│   ├── test_repositories/
+│   └── test_api/
+├── docs/                          # Documentation
+├── main.py                        # Application entry point
+├── pyproject.toml                 # UV dependencies
+├── .env.example                   # Safe template (committed)
+├── .gitignore                     # Comprehensive exclusions
+├── .pre-commit-config.yaml        # Code quality automation
+└── README.md                      # Project documentation
+Why src/package_name/ Structure?
+Clear Namespace: from package_name.models import Job (professional)
+No Conflicts: Prevents collision with system modules
+Packaging Ready: Can pip install package-name
+Team Clarity: Obvious project identity in imports
+Industry Standard: How professional Python packages are structured
+🚫 ZERO HARDCODING RULE (CRITICAL)
+Configuration Centralization
+# ✅ ALWAYS: Single source of truth in settings.py
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    # API Configuration
+    api_host: str = "127.0.0.1"
+    api_port: int = 8080
+    api_timeout: float = 30.0
+    
+    # Processing Configuration
+    max_retries: int = 3
+    batch_size: int = 10
+    max_concurrent: int = 5
+    
+    # AI Model Configuration
+    openai_model: str = "gpt-4"
+    gemini_model: str = "gemini-pro"
+    
+    # External API Keys
+    openai_api_key: Optional[str] = None
+    
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+NEVER Hardcode These:
+❌ API endpoints, ports, hosts
+❌ Model names, AI parameters
+❌ File size limits, timeouts
+❌ Batch sizes, concurrency limits
+❌ Progress thresholds, retry counts
+❌ Cost calculations, pricing
+❌ File paths, directory names
+Environment Variable Strategy
+# ✅ .env.example (committed - safe template)
+API_HOST=127.0.0.1
+API_PORT=8080
+OPENAI_MODEL=gpt-4
+MAX_RETRIES=3
+
+# ✅ .env.dev (local only - real values)
+API_HOST=localhost  
+API_PORT=8081
+OPENAI_API_KEY=sk-real-key-here
+MAX_RETRIES=5
+
+# ✅ .env.prod (local only - production values)
+API_HOST=0.0.0.0
+API_PORT=8080
+OPENAI_API_KEY=sk-prod-key-here
+MAX_RETRIES=3
+🎯 TYPE SAFETY (MANDATORY)
+Type Annotation Rules
+# ✅ CORRECT: Complete type annotations
+from typing import Optional, List, Dict, Any
+
+def process_data(
+    input_data: str,
+    config: Optional[Config] = None,
+    max_items: int = 100
+) -> Dict[str, Any]:
+    
+    if config is None:  # ✅ Always check Optional values
+        config = default_config
+        
+    return {"result": "success"}
+
+# ❌ WRONG: Missing types or incorrect Optional usage
+def process_data(input_data, config=None):  # No types
+def process_data(input_data: str, config: Config = None):  # Wrong Optional
+Type Safety Checklist
+✅ All function parameters have type hints
+✅ All return types specified
+✅ Optional parameters: Optional[Type] = None
+✅ None checks before accessing Optional values
+✅ List/Dict types specified: List[str], Dict[str, Any]
+✅ Union types properly defined
+🚀 PERFORMANCE RULES
+Parallelization Standards
+# ✅ CORRECT: True parallelization with order preservation
+class ProcessingService:
+    async def process_large_dataset(self, items: List[Item]) -> List[Result]:
+        # Rate limiting
+        semaphore = asyncio.Semaphore(settings.max_concurrent)
+        
+        async def process_single_item(item: Item) -> Result:
+            async with semaphore:
+                return await expensive_operation(item)
+        
+        # True parallelization
+        tasks = [process_single_item(item) for item in items]
+        results = await asyncio.gather(*tasks)
+        
+        # Preserve order
+        results.sort(key=lambda x: x.original_index)
+        return results
+Progress Tracking Rules
+# ✅ CORRECT: Monotonic progress (never backwards)
+class ProgressTracker:
+    def __init__(self, total_items: int):
+        self.total_items = total_items
+        self.completed = 0
+        self.lock = asyncio.Lock()
+    
+    async def increment(self):
+        async with self.lock:  # Thread-safe
+            self.completed += 1
+            progress = self.completed / self.total_items
+            await update_progress(progress)  # Always increasing
+Performance Guidelines
+Async/await for all I/O operations
+Semaphores for rate limiting
+Batch processing for efficiency
+Concurrent operations where safe
+Memory optimization for large datasets
+Progress tracking must be monotonic
+📦 PACKAGE MANAGEMENT WITH UV
+UV Requirements
+# ✅ SETUP: Initialize with UV
+uv init --no-readme
+uv add fastapi uvicorn pydantic-settings
+
+# ✅ DEVELOPMENT: Add dev dependencies
+uv add --dev black pytest mypy pre-commit
+
+# ✅ USAGE: Run commands with UV
+uv run python main.py
+uv run pytest
+uv run black src/
+Dependency Rules
+Use UV (not pip/poetry) for package management
+No version pinning in pyproject.toml (get latest)
+Separate dev dependencies with --dev
+Keep uv.lock committed for reproducible builds
+Regular updates with uv sync --upgrade
+🐳 DOCKER STANDARDS
+Environment Separation
+# ✅ dev/Dockerfile - Development optimized
+FROM python:3.12-slim
+WORKDIR /app
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+COPY pyproject.toml uv.lock ./
+RUN uv sync --no-cache
+COPY . .
+CMD ["uv", "run", "python", "main.py"]
+
+# ✅ prod/Dockerfile - Production optimized
+FROM python:3.12-slim as builder
+RUN uv sync --no-cache --no-dev
+
+FROM python:3.12-slim
+RUN adduser --disabled-password appuser
+COPY --from=builder /app/.venv /app/.venv
+USER appuser
+HEALTHCHECK CMD curl -f http://localhost:8080/health
+CMD ["/app/.venv/bin/python", "main.py"]
+Docker Compose Rules
+# ✅ CORRECT: Environment-specific configuration
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: docker/dev/Dockerfile
+    ports:
+      - "${HOST_PORT:-8080}:8080"    # Configurable external port
+    environment:
+      - ENVIRONMENT=development
+    env_file:
+      - .env.dev                      # Environment-specific secrets
+    volumes:
+      - ../../src:/app/src            # Live reload for development
+    restart: unless-stopped
+Docker Best Practices
+Multi-stage builds for production
+Non-root users in production
+Health checks for monitoring
+Resource limits specified
+Environment-specific configurations
+Volume mounts for development
+Service networking properly configured
+🔒 SECURITY (CRITICAL)
+API Key Protection
+# ✅ MANDATORY .gitignore sections
+# Environment files with secrets
+.env
+.env.local
+.env.dev
+.env.prod
+.env.staging
+.env.test
+
+# NEVER ignore the template
+!.env.example
+
+# Python specific
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
+
+# IDE files
+.vscode/settings.json
+.idea/
+
+# OS files  
+.DS_Store
+Thumbs.db
+Secret Management Rules
+API keys ONLY in .env files (never in code)
+Environment templates (.env.example) are safe to commit
+Regular security audits of commit history
+Separate secrets per environment
+Never hardcode sensitive values
+Git Security Checklist
+✅ Comprehensive .gitignore in place
+✅ No API keys in any commits
+✅ .env files properly excluded
+✅ Regular git status --ignored checks
+✅ Team education on secret handling
+🛠️ CODE QUALITY AUTOMATION
+Pre-commit Configuration
+# ✅ MANDATORY .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+        language_version: python3.12
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        args: ["--max-line-length=120", "--extend-ignore=E203,E501"]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+Quality Standards
+Black formatting (line length 88-120 chars)
+Import organization with isort
+Linting with flake8
+No unused imports or variables
+PEP 8 compliance enforced
+File validation (YAML, TOML, JSON)
+Trailing whitespace removal
+🔄 DEVELOPMENT WORKFLOW
+Git Practices
+# ✅ CORRECT: Feature branch workflow
+git checkout -b feat/feature-name
+# Make changes
+git add .
+git commit -m "feat: descriptive commit message with impact"
+# Pre-commit hooks run automatically
+git push origin feat/feature-name
+Commit Message Standards
+feat: implement new feature with performance improvement
+
+MAJOR CHANGES:
+- Specific change 1 with business impact
+- Specific change 2 with technical details
+
+TECHNICAL DETAILS:
+- Implementation specifics
+- Performance improvements
+- Configuration changes
+
+IMPACT:
+- User benefit 1
+- Performance metric (e.g., 3x faster)
+- Maintainability improvement
+Branch Protection Rules
+Feature branches for all changes
+Code review required before merge
+Pre-commit hooks must pass
+No direct commits to main/master
+Descriptive branch names: feat/, fix/, chore/
+📊 ARCHITECTURE PATTERNS
+Clean Architecture Layers
+# ✅ CORRECT: Layered architecture
+# API Layer (FastAPI routes)
+@router.post("/endpoint")
+async def endpoint(service: Service = Depends(get_service)):
+    return await service.process()
+
+# Service Layer (Business logic)
+class BusinessService:
+    def __init__(self, repo: Repository):
+        self.repo = repo
+    
+    async def process(self) -> Result:
+        # Business logic here
+        pass
+
+# Repository Layer (Data access)
+class Repository:
+    async def save(self, entity: Entity) -> bool:
+        # Data persistence logic
+        pass
+
+# Model Layer (Domain entities)
+class Entity(BaseModel):
+    id: str
+    status: StatusEnum
+    created_at: datetime
+Dependency Injection
+# ✅ CORRECT: FastAPI dependency injection
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize services
+    repository = Repository()
+    service = Service(repository)
+    
+    app_state.update({
+        "service": service,
+        "repository": repository
+    })
+    yield
+
+def get_service() -> Service:
+    return app_state["service"]
+
+@router.post("/endpoint")
+async def endpoint(service: Service = Depends(get_service)):
+    return await service.process()
+🎯 TYPE SAFETY REQUIREMENTS
+Mandatory Type Annotations
+# ✅ CORRECT: Complete type safety
+from typing import Optional, List, Dict, Any, Union
+
+class Service:
+    def __init__(self, client: APIClient) -> None:
+        self.client = client
+    
+    async def process_items(
+        self, 
+        items: List[str], 
+        config: Optional[Config] = None,
+        max_items: int = 100
+    ) -> Dict[str, Any]:
+        
+        if config is None:  # ✅ Always validate Optional
+            config = default_config
+            
+        results: List[Result] = []
+        for item in items[:max_items]:
+            result = await self.client.process(item)
+            results.append(result)
+            
+        return {"results": results, "count": len(results)}
+Type Safety Checklist
+✅ All parameters have type hints
+✅ All return types specified
+✅ Optional types: Optional[Type] = None
+✅ Generic types: List[str], Dict[str, Any]
+✅ None validation before access
+✅ Enum usage over string constants
+🚀 PERFORMANCE GUIDELINES
+Async/Await Patterns
+# ✅ CORRECT: True parallelization
+async def process_parallel(items: List[Item]) -> List[Result]:
+    semaphore = asyncio.Semaphore(settings.max_concurrent)
+    
+    async def process_single(item: Item) -> Result:
+        async with semaphore:
+            return await expensive_api_call(item)
+    
+    # All items processed in parallel
+    tasks = [process_single(item) for item in items]
+    results = await asyncio.gather(*tasks)
+    
+    # Preserve order if needed
+    results.sort(key=lambda x: x.original_index)
+    return results
+
+# ❌ WRONG: Sequential processing
+async def process_sequential(items: List[Item]) -> List[Result]:
+    results = []
+    for item in items:  # One at a time - slow!
+        result = await expensive_api_call(item)
+        results.append(result)
+    return results
+Progress Tracking Standards
+# ✅ CORRECT: Monotonic progress
+class ProgressTracker:
+    def __init__(self, total: int, job_id: str):
+        self.total = total
+        self.completed = 0
+        self.job_id = job_id
+        self.lock = asyncio.Lock()
+    
+    async def increment(self):
+        async with self.lock:
+            self.completed += 1
+            progress = self.completed / self.total  # Always 0-1.0
+            await update_job_progress(self.job_id, progress)
+🔧 CONFIGURATION MANAGEMENT
+Pydantic Settings Pattern
+# ✅ CORRECT: Environment-driven configuration
+from pydantic_settings import BaseSettings
+from typing import Optional
+
+class Settings(BaseSettings):
+    # Server config
+    host: str = "127.0.0.1"
+    port: int = 8080
+    debug: bool = False
+    
+    # API config  
+    api_timeout: float = 30.0
+    max_retries: int = 3
+    
+    # Processing config
+    batch_size: int = 10
+    max_concurrent: int = 5
+    
+    # External services
+    openai_api_key: Optional[str] = None
+    redis_url: Optional[str] = None
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+
+# ✅ USAGE: Single global instance
+settings = Settings()
+
+# ✅ USAGE: Reference everywhere
+timeout = settings.api_timeout  # Not hardcoded 30.0
+Environment File Organization
+.env.example         # Template (committed)
+.env                 # Local development (ignored)
+docker/dev/.env.dev  # Docker dev (ignored)
+docker/prod/.env.prod # Docker prod (ignored)
+🧪 TESTING STANDARDS
+Test Organization
+# ✅ CORRECT: Comprehensive test structure
+import pytest
+from unittest.mock import AsyncMock
+from src.project.services.business_service import BusinessService
+
+class TestBusinessService:
+    @pytest.fixture
+    def mock_repository(self):
+        return AsyncMock()
+    
+    @pytest.fixture
+    def service(self, mock_repository):
+        return BusinessService(mock_repository)
+    
+    async def test_process_success(self, service, mock_repository):
+        # Arrange
+        mock_repository.save.return_value = True
+        
+        # Act
+        result = await service.process("test_data")
+        
+        # Assert
+        assert result["status"] == "success"
+        mock_repository.save.assert_called_once()
+Testing Requirements
+Unit tests for all services
+Integration tests for API endpoints
+Mock external dependencies
+Async test patterns
+Test data isolation
+🛡️ ERROR HANDLING
+Exception Management
+# ✅ CORRECT: Comprehensive error handling
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+class ServiceError(Exception):
+    """Custom service exception"""
+    pass
+
+class Service:
+    async def process(self, data: str) -> Optional[Result]:
+        try:
+            result = await external_api_call(data)
+            logger.info(f"Successfully processed {len(data)} bytes")
+            return result
+            
+        except ExternalAPIError as e:
+            logger.error(f"External API failed: {str(e)}")
+            raise ServiceError(f"Processing failed: {e}")
+            
+        except Exception as e:
+            logger.exception("Unexpected error in processing")
+            raise ServiceError("Internal processing error")
+Error Handling Rules
+Custom exceptions for business logic
+Proper logging at appropriate levels
+Graceful degradation where possible
+Never bare except clauses
+Meaningful error messages
+🔄 DEVELOPMENT SETUP
+Initial Setup Commands
+# 1. Clone repository
+git clone https://github.com/org/project-name.git
+cd project-name
+
+# 2. Set up UV environment
+uv sync
+
+# 3. Install pre-commit hooks
+uv add --dev pre-commit
+uv run pre-commit install
+
+# 4. Create environment file
+cp .env.example .env
+# Edit .env with your API keys
+
+# 5. Run development server
+uv run python main.py
+
+# 6. Run tests
+uv run pytest
+Daily Development Workflow
+# Add new dependency
+uv add package-name
+
+# Add dev dependency  
+uv add --dev pytest-cov
+
+# Format code
+uv run black src/
+
+# Run tests
+uv run pytest
+
+# Type checking
+uv run mypy src/
+
+# Start development
+uv run python main.py
+📝 DOCUMENTATION REQUIREMENTS
+README.md Structure
+# Project Name
+
+## 🚀 Quick Start
+[Setup instructions]
+
+## 📁 Project Structure  
+[Directory explanation]
+
+## 🔧 Configuration
+[Environment setup]
+
+## 🐳 Docker Deployment
+[Container instructions]
+
+## 🧪 Testing
+[Test execution]
+
+## 📚 API Documentation
+[Endpoint documentation]
+Documentation Standards
+Clear setup instructions
+Configuration examples
+API endpoint documentation
+Docker deployment guide
+Testing instructions
+Troubleshooting section
+⚡ PERFORMANCE MONITORING
+Health Check Implementation
+# ✅ CORRECT: Comprehensive health checks
+@router.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "version": settings.api_version,
+        "environment": settings.environment,
+        "active_connections": get_connection_count(),
+        "memory_usage": get_memory_usage(),
+    }
+Monitoring Requirements
+Health endpoints for all services
+Performance metrics collection
+Error rate monitoring
+Resource usage tracking
+Logging standardization
+🎯 DEPLOYMENT CHECKLIST
+Pre-deployment Verification
+✅ All pre-commit hooks passing
+✅ Zero hardcoded values
+✅ Type safety verified
+✅ Tests passing
+✅ Documentation updated
+✅ Security audit complete
+✅ Performance testing done
+✅ Environment configs ready
+Deployment Steps
+Clone repository on target server
+Create environment file from template
+Add production secrets to .env file
+Build containers: docker compose build
+Deploy services: docker compose up -d
+Verify health: Check health endpoints
+Monitor logs: Ensure clean startup
+
+
+🏆 SUCCESS CRITERIA
+A repository following these standards will have:
+
+✅ Zero hardcoding throughout codebase
+✅ Production-ready architecture
+✅ Type-safe implementation
+✅ High performance with parallelization
+✅ Secure configuration management
+✅ Quality-enforced development workflow
+✅ Team-friendly collaboration tools
+
+These standards ensure enterprise-grade Python repositories that are maintainable, scalable, and production-ready! 🚀
+
+
+
+These rules are based on real-world implementation and transformation of production systems.
+
