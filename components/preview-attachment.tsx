@@ -1,4 +1,4 @@
-import type { Attachment } from 'ai';
+import type { Attachment } from './chat';
 
 import { LoaderIcon } from './icons';
 

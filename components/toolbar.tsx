@@ -55,6 +55,9 @@ const TOOLKIT_AUTH_CONFIG: Record<string, string> = {
   NOTION: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_NOTION || '',
   SLACK: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_SLACK || '',
   LINEAR: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_LINEAR || '',
+  DROPBOX: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_DROPBOX || '',
+  GOOGLEDRIVE: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GOOGLEDRIVE || '',
+  CLICKUP: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_CLICKUP || '',
 };
 
 const TOOLBAR_COOKIE_NAME = 'toolbar:state';

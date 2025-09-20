@@ -32,6 +32,9 @@ const SUPPORTED_TOOLKITS = [
   'NOTION',
   'SLACK',
   'LINEAR',
+  'DROPBOX',
+  'GOOGLEDRIVE',
+  'CLICKUP'
 ];
 
 export async function GET() {

@@ -10,7 +10,25 @@ import {
 } from '../schema';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { inArray } from 'drizzle-orm';
-import { appendResponseMessages, type UIMessage } from 'ai';
+// Define UIMessage type locally since we removed AI SDK
+interface UIMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createdAt?: Date;
+  parts?: Array<{ type: string; text?: string; [key: string]: any }>;
+}
+
+// Simple replacement for appendResponseMessages
+function appendResponseMessages({
+  messages,
+  responseMessages,
+}: {
+  messages: UIMessage[];
+  responseMessages: UIMessage[];
+}) {
+  return [...messages, ...responseMessages];
+}
 
 config({
   path: '.env.local',
@@ -157,11 +175,7 @@ async function migrateMessages() {
         try {
           const uiSection = appendResponseMessages({
             messages: [userMessage],
-            // @ts-expect-error: message.content has different type
             responseMessages: assistantMessages,
-            _internal: {
-              currentDate: () => firstAssistantMessage.createdAt ?? new Date(),
-            },
           });
 
           const projectedUISection = uiSection

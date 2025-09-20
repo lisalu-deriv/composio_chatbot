@@ -43,3 +43,6 @@ yarn-error.log*
 /playwright/*
 tsconfig.tsbuildinfo
 docs/composio-toolkit-metadata.md
+
+# cursor
+.cursor/

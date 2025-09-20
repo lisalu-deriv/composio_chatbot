@@ -1,6 +1,6 @@
 'use client';
 
-import type { UIMessage } from 'ai';
+import type { UIMessage } from './chat';
 import cx from 'classnames';
 import { AnimatePresence, motion } from 'framer-motion';
 import { memo, useState } from 'react';
@@ -17,7 +17,6 @@ import { Button } from './ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
-import type { UseChatHelpers } from '@ai-sdk/react';
 
 const PurePreviewMessage = ({
   chatId,
@@ -33,8 +32,8 @@ const PurePreviewMessage = ({
   message: UIMessage;
   vote: Vote | undefined;
   isLoading: boolean;
-  setMessages: UseChatHelpers['setMessages'];
-  reload: UseChatHelpers['reload'];
+  setMessages: (messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[])) => void;
+  reload: () => void;
   isReadonly: boolean;
   requiresScrollPadding: boolean;
 }) => {
@@ -90,16 +89,6 @@ const PurePreviewMessage = ({
               const { type } = part;
               const key = `message-${message.id}-part-${index}`;
 
-              if (type === 'reasoning') {
-                return (
-                  <MessageReasoning
-                    key={key}
-                    isLoading={isLoading}
-                    reasoning={part.reasoning}
-                  />
-                );
-              }
-
               if (type === 'text') {
                 if (mode === 'view') {
                   return (
@@ -152,68 +141,7 @@ const PurePreviewMessage = ({
                 }
               }
 
-              if (type === 'tool-invocation') {
-                const { toolInvocation } = part;
-                const { toolName, toolCallId, state } = toolInvocation;
-
-                if (state === 'call') {
-                  const { args } = toolInvocation;
-
-                  return (
-                    <div
-                      key={toolCallId}
-                      className={cx({
-                        skeleton: ['getWeather'].includes(toolName),
-                      })}
-                    >
-                      {toolName === 'getWeather' ? (
-                        <Weather />
-                      ) : [
-                          'createDocument',
-                          'updateDocument',
-                          'requestSuggestions',
-                        ].includes(toolName) ? (
-                        <div className="text-muted-foreground text-sm">
-                          Processing...
-                        </div>
-                      ) : (
-                        <ToolCall
-                          toolName={toolName}
-                          args={args}
-                          isLoading={true}
-                        />
-                      )}
-                    </div>
-                  );
-                }
-
-                if (state === 'result') {
-                  const { result } = toolInvocation;
-
-                  return (
-                    <div key={toolCallId}>
-                      {toolName === 'getWeather' ? (
-                        <Weather weatherAtLocation={result} />
-                      ) : [
-                          'createDocument',
-                          'updateDocument',
-                          'requestSuggestions',
-                        ].includes(toolName) ? (
-                        <div className="text-muted-foreground text-sm">
-                          Completed
-                        </div>
-                      ) : (
-                        <ToolCall
-                          toolName={toolName}
-                          args={toolInvocation.args}
-                          result={result}
-                          isLoading={false}
-                        />
-                      )}
-                    </div>
-                  );
-                }
-              }
+              return null;
             })}
 
             {!isReadonly && (

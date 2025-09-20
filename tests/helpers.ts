@@ -7,8 +7,17 @@ import {
   expect,
   type Page,
 } from '@playwright/test';
-import { generateId } from 'ai';
 import { ChatPage } from './pages/chat';
+
+// Simple UUID generator to replace generateId from AI SDK
+function generateId(length: number = 16): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 import { getUnixTime } from 'date-fns';
 
 export type UserContext = {

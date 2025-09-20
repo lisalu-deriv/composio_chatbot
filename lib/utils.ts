@@ -1,7 +1,7 @@
-import type { CoreAssistantMessage, CoreToolMessage, UIMessage } from 'ai';
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { ChatSDKError, type ErrorCode } from './errors';
+import type { UIMessage } from '@/components/chat';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -55,8 +55,7 @@ export function generateUUID(): string {
   });
 }
 
-type ResponseMessageWithoutId = CoreToolMessage | CoreAssistantMessage;
-type ResponseMessage = ResponseMessageWithoutId & { id: string };
+type ResponseMessage = UIMessage & { id: string };
 
 export function getMostRecentUserMessage(messages: Array<UIMessage>) {
   const userMessages = messages.filter((message) => message.role === 'user');

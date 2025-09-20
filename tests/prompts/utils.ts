@@ -1,5 +1,29 @@
-import type { CoreMessage, LanguageModelV1StreamPart } from 'ai';
 import { TEST_PROMPTS } from './basic';
+
+// Define types locally since we removed AI SDK
+interface CoreMessage {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: Array<{
+    type: 'text' | 'image' | 'tool-result';
+    text?: string;
+    image?: string;
+    toolCallId?: string;
+    toolName?: string;
+    result?: any;
+  }>;
+}
+
+interface LanguageModelV1StreamPart {
+  type: 'text-delta' | 'reasoning' | 'finish' | 'tool-call';
+  textDelta?: string;
+  finishReason?: string;
+  logprobs?: any;
+  usage?: { completionTokens: number; promptTokens: number };
+  toolCallId?: string;
+  toolName?: string;
+  toolCallType?: string;
+  args?: string;
+}
 
 export function compareMessages(
   firstMessage: CoreMessage,

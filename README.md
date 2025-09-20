@@ -4,7 +4,11 @@
 </a>
 
 <p align="center">
-  An Open-Source AI Chatbot Template Built With Next.js, Anthropic Claude, and Composio Integration.
+  An Open-Source AI Chatbot Template Built With Next.js, LangChain/LangGraph, Multi-Provider AI Support, and Composio Integration.
+</p>
+
+<p align="center">
+  <strong>🚀 Now powered by LangChain/LangGraph with ReAct Agent Architecture!</strong>
 </p>
 
 <p align="center">
@@ -17,27 +21,28 @@
 
 ## Features
 
-- **Real-time AI Chat** - Powered by Anthropic Claude models (claude-4-sonnet)
-- **Multiple Artifacts** - Support for code, documents, images, and spreadsheets
-- **File Processing** - Upload and process various document types
-- **Chat History** - Public/private visibility with persistent storage
-- **User Interactions** - Voting and suggestions system
-- **Multi-modal Input** - Text, voice, and file inputs
-- **Third-party Integrations** - Access to 300+ apps via Composio
+- **🤖 LangChain/LangGraph AI Framework** - Advanced ReAct (Reasoning and Acting) agent architecture
+- **🔄 Multi-Provider AI Support** - OpenAI, Anthropic Claude, and Google Gemini
+- **🛠️ Intelligent Tool Usage** - Weather tools and 300+ app integrations via Composio
+- **💬 Real-time Streaming Chat** - Server-sent events with LangGraph streaming
+- **📁 Multiple Artifacts** - Support for code, documents, images, and spreadsheets
+- **📤 File Processing** - Upload and process various document types
+- **📚 Chat History** - Public/private visibility with persistent storage
+- **👍 User Interactions** - Voting and suggestions system
+- **🎤 Multi-modal Input** - Text, voice, and file inputs
+- **🔗 Third-party Integrations** - Access to 300+ apps via Composio
 
 ## Tech Stack
 
 - **[Next.js 15](https://nextjs.org)** - App Router with React Server Components
-- **[AI SDK](https://sdk.vercel.ai)** - Anthropic Claude integration
+- **[LangChain/LangGraph](https://langchain.com)** - AI framework with ReAct agent architecture
+- **[OpenAI](https://openai.com)** - GPT models (O3, GPT-5-mini, GPT-5-nano)
+- **[Anthropic](https://anthropic.com)** - Claude models (Claude-4-sonnet, Claude-3.7-sonnet, Claude-3.5-haiku)
+- **[Google Gemini](https://ai.google.dev)** - Gemini models (2.5-flash, 2.5-pro)
 - **[Composio](https://composio.dev)** - Third-party app integrations (300+ apps)
 - **[Drizzle ORM](https://orm.drizzle.team)** - PostgreSQL database
 - **[Auth.js](https://authjs.dev)** - Authentication system
 - **[shadcn/ui](https://ui.shadcn.com)** - UI components with Tailwind CSS
-
-## Deploy your own
-You can deploy your version with one click:
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FComposioHQ%2Fchat%2F&env=BLOB_READ_WRITE_TOKEN,COMPOSIO_API_KEY,NEXT_PUBLIC_COMPOSIO_AUTH_GITHUB,NEXT_PUBLIC_COMPOSIO_AUTH_GMAIL,NEXT_PUBLIC_COMPOSIO_AUTH_GOOGLECALENDAR,NEXT_PUBLIC_COMPOSIO_AUTH_LINEAR,NEXT_PUBLIC_COMPOSIO_AUTH_NOTION,NEXT_PUBLIC_COMPOSIO_AUTH_SLACK,VERCEL_OIDC_TOKEN&envDescription=Learn%20more%20about%20how%20to%20get%20the%20API%20Keys%20for%20the%20application&envLink=https%3A%2F%2Fgithub.com%2Fcomposiohq%2Fchat%2Fblob%2Fmain%2F.env.example&demo-title=Composio%20Chat&demo-description=A%20working%20full-stack%20agentic%20chat%20app%20built%20with%20Composio%20and%20Vercel%20AI%20SDK.&demo-url=https%3A%2F%2Fchat.composio.dev)
 
 
 ## Running locally
@@ -60,7 +65,7 @@ You can deploy your version with one click:
 2. **Install dependencies**
 
    ```bash
-   pnpm install
+   npm install
    ```
 
 3. **Set up environment variables**
@@ -71,20 +76,29 @@ You can deploy your version with one click:
 
    Add your configuration:
 
-   - **Composio API key** from [app.composio.dev](https://app.composio.dev/developers)
-   - **Database connection** details
-   - **Authentication providers** (Google, GitHub, etc.)
-   - **Anthropic API key** for Claude models
+   ```env
+   # At least one AI provider is required
+   OPENAI_API_KEY=your-openai-key
+   OPENAI_BASE_URL=https://api.openai.com/v1  # Optional: for proxies
+   ANTHROPIC_API_KEY=your-anthropic-key
+   GEMINI_API_KEY=your-gemini-key
+   
+   # Required
+   COMPOSIO_API_KEY=your-composio-key
+   POSTGRES_URL=your-postgresql-url
+   AUTH_SECRET=your-random-secret
+   BLOB_READ_WRITE_TOKEN=your-vercel-blob-token
+   ```
 
 4. **Run database migrations**
 
    ```bash
-   pnpm db:migrate
+   npm run db:migrate
    ```
 
 5. **Start the development server**
    ```bash
-   pnpm dev
+   npm run dev
    ```
 
 Visit [http://localhost:3000](http://localhost:3000) to see your application.
@@ -93,30 +107,34 @@ Visit [http://localhost:3000](http://localhost:3000) to see your application.
 
 | Command            | Description                                      |
 | ------------------ | ------------------------------------------------ |
-| `pnpm dev`         | Start development server with Turbo              |
-| `pnpm build`       | Run database migrations and build production app |
-| `pnpm lint`        | Run Next.js and Biome linting with auto-fix      |
-| `pnpm format`      | Format code with Biome                           |
-| `pnpm test`        | Run Playwright e2e tests                         |
-| `pnpm db:migrate`  | Run database migrations                          |
-| `pnpm db:generate` | Generate Drizzle migrations                      |
-| `pnpm db:studio`   | Open Drizzle Studio for database inspection      |
-| `pnpm db:push`     | Push schema changes to database                  |
+| `npm run dev`      | Start development server with Turbo              |
+| `npm run build`    | Run database migrations and build production app |
+| `npm run lint`     | Run Next.js and Biome linting with auto-fix      |
+| `npm run format`   | Format code with Biome                           |
+| `npm test`         | Run Playwright e2e tests                         |
+| `npm run db:migrate` | Run database migrations                        |
+| `npm run db:generate` | Generate Drizzle migrations                   |
+| `npm run db:studio` | Open Drizzle Studio for database inspection     |
+| `npm run db:push`  | Push schema changes to database                  |
 
 ## Project Structure
 
 ```
-chat/
+composio_chatbot/
 ├── app/
 │   ├── (auth)/          # Authentication routes and components
-│   ├── (chat)/          # Main chat interface and API routes
+│   ├── (chat)/          # Main chat interface and LangGraph API routes
 │   └── api/             # API endpoints
-├── artifacts/           # Different artifact types (code, image, text, sheet)
-├── components/          # Reusable UI components
+├── components/          # Reusable UI components (no AI SDK dependencies)
 ├── lib/
-│   ├── ai/              # AI model configuration and tools
-│   └── db/              # Database schema and utilities
-├── hooks/               # Custom React hooks
+│   ├── ai/              # LangChain/LangGraph modules
+│   │   ├── agent.ts     # ReAct agent implementation
+│   │   ├── providers.ts # Multi-provider system (OpenAI, Anthropic, Gemini)
+│   │   ├── tools/       # Tool implementations (weather, Composio)
+│   │   └── prompts.ts   # System prompts
+│   ├── db/              # Database schema and utilities
+│   └── services/        # External service integrations
+├── hooks/               # Custom React hooks (no AI SDK dependencies)
 └── tests/               # Playwright e2e tests
 ```
 
@@ -138,17 +156,44 @@ For detailed Composio documentation, see `composio-docs.md`.
 ### Core Stack
 
 - **Next.js 15** with App Router and React Server Components
-- **AI SDK** for LLM integration with Anthropic Claude models
+- **LangChain/LangGraph** for AI orchestration with ReAct agent pattern
+- **Multi-Provider AI** supporting OpenAI, Anthropic, and Gemini
 - **Drizzle ORM** with PostgreSQL for data persistence
 - **Auth.js** for authentication
 - **shadcn/ui** components with Tailwind CSS
 
-### AI Integration
+### LangChain/LangGraph Integration
 
-- Default model: `claude-4-sonnet-20250514` for chat, `claude-3-5-haiku-latest` for titles
-- Configurable via `/lib/ai/providers.ts`
-- Test environment uses mock models from `/lib/ai/models.test.ts`
-- AI tools defined in `/lib/ai/tools/`
+- **ReAct Agent**: Reasoning and Acting pattern for intelligent tool usage
+- **StateGraph**: Conversation flow management with LangGraph
+- **Multi-Provider Support**: Automatic provider selection based on available API keys
+- **Tool Binding**: Dynamic tool discovery and binding to models
+- **Streaming**: Real-time response streaming with server-sent events
+- **Configurable**: Easy model and provider configuration via `/lib/ai/providers.ts`
+
+### AI Models Supported
+
+#### OpenAI Models
+- `o3` - Latest reasoning model
+- `gpt-5-mini` - Advanced general-purpose model
+- `gpt-5-nano` - Ultra-fast lightweight model
+
+#### Anthropic Models
+- `claude-4-sonnet` - Most capable Claude model
+- `claude-3-7-sonnet-latest` - Enhanced reasoning
+- `claude-3-5-haiku-latest` - Fast and efficient
+
+#### Google Gemini Models
+- `gemini-2.5-flash` - High-performance multimodal
+- `gemini-2.5-flash-lite` - Lightweight version
+- `gemini-2.5-pro` - Professional-grade reasoning
+
+### Tool System
+
+- **Weather Tool**: Location-based weather information using Open-Meteo API
+- **Composio Integration**: 300+ app integrations (GitHub, Gmail, Calendar, etc.)
+- **Custom Tools**: Easy-to-add custom tool framework
+- **Tool Execution**: Seamless tool binding and execution within ReAct agent
 
 ### Database Schema
 

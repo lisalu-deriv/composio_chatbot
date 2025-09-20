@@ -1,4 +1,15 @@
-import type { CoreMessage } from 'ai';
+// Define CoreMessage type locally since we removed AI SDK
+interface CoreMessage {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: Array<{
+    type: 'text' | 'image' | 'tool-result';
+    text?: string;
+    image?: string;
+    toolCallId?: string;
+    toolName?: string;
+    result?: any;
+  }>;
+}
 
 export const TEST_PROMPTS: Record<string, CoreMessage> = {
   USER_SKY: {

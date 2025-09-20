@@ -1,10 +1,3 @@
-import {
-  appendClientMessage,
-  appendResponseMessages,
-  createDataStream,
-  smoothStream,
-  streamText,
-} from 'ai';
 import { auth, type UserType } from '@/app/(auth)/auth';
 import { type RequestHints, systemPrompt } from '@/lib/ai/prompts';
 import {
@@ -19,45 +12,25 @@ import {
 } from '@/lib/db/queries';
 import { generateUUID, getTrailingMessageId } from '@/lib/utils';
 import { generateTitleFromUserMessage } from '../../actions';
-import { getWeather } from '@/lib/ai/tools/get-weather';
+import { getWeatherTool } from '@/lib/ai/tools/get-weather';
 import { isProductionEnvironment } from '@/lib/constants';
-import { myProvider } from '@/lib/ai/providers';
 import { entitlementsByUserType } from '@/lib/ai/entitlements';
 import { postRequestBodySchema, type PostRequestBody } from './schema';
 import { geolocation } from '@vercel/functions';
-import {
-  createResumableStreamContext,
-  type ResumableStreamContext,
-} from 'resumable-stream';
 import { after } from 'next/server';
 import type { Chat } from '@/lib/db/schema';
 import { differenceInSeconds } from 'date-fns';
 import { ChatSDKError } from '@/lib/errors';
 import { getComposioTools } from '@/lib/ai/tools/composio';
+import { 
+  createReActAgent, 
+  convertToLangChainMessages, 
+  convertFromLangChainMessages 
+} from '@/lib/ai/agent';
+import { createModelById } from '@/lib/ai/providers';
+import { HumanMessage, AIMessage, AIMessageChunk } from '@langchain/core/messages';
 
 export const maxDuration = 60;
-
-let globalStreamContext: ResumableStreamContext | null = null;
-
-function getStreamContext() {
-  if (!globalStreamContext) {
-    try {
-      globalStreamContext = createResumableStreamContext({
-        waitUntil: after,
-      });
-    } catch (error: any) {
-      if (error.message.includes('REDIS_URL')) {
-        console.log(
-          ' > Resumable streams are disabled due to missing REDIS_URL',
-        );
-      } else {
-        console.error(error);
-      }
-    }
-  }
-
-  return globalStreamContext;
-}
 
 export async function POST(request: Request) {
   let requestBody: PostRequestBody;
@@ -116,11 +89,11 @@ export async function POST(request: Request) {
 
     const previousMessages = await getMessagesByChatId({ id });
 
-    const messages = appendClientMessage({
-      // @ts-expect-error: todo add type conversion from DBMessage[] to UIMessage[]
-      messages: previousMessages,
+    // Convert to LangChain format
+    const langchainMessages = convertToLangChainMessages([
+      ...previousMessages,
       message,
-    });
+    ]);
 
     const { longitude, latitude, city, country } = geolocation(request);
 
@@ -131,6 +104,7 @@ export async function POST(request: Request) {
       country,
     };
 
+    // Save user message
     await saveMessages({
       messages: [
         {
@@ -147,105 +121,241 @@ export async function POST(request: Request) {
     const streamId = generateUUID();
     await createStreamId({ streamId, chatId: id });
 
-    const stream = createDataStream({
-      execute: async (dataStream) => {
-        // Extract just the slugs for the getComposioTools function
-        const toolkitSlugs = enabledToolkits?.map((t) => t.slug) || [];
+    // Prepare tools
+    const toolkitSlugs = enabledToolkits?.map((t) => t.slug) || [];
+    const composioTools = await getComposioTools(session.user.id, toolkitSlugs);
+    const allTools = [getWeatherTool, ...composioTools];
 
-        // Fetch Composio tools if toolkits are enabled
-        const composioTools = await getComposioTools(
-          session.user.id,
-          toolkitSlugs,
-        );
+    // Create ReAct agent
+    const agent = createReActAgent({
+      modelId: selectedChatModel,
+      requestHints,
+      tools: allTools,
+      maxSteps: 5,
+    });
 
-        const result = streamText({
-          model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel, requestHints }),
-          messages,
-          maxSteps: 5,
-          experimental_transform: smoothStream({ chunking: 'word' }),
-          experimental_generateMessageId: generateUUID,
-          tools: {
-            getWeather,
-            ...composioTools,
-          },
-          onFinish: async ({ response }) => {
-            if (session.user?.id) {
-              try {
-                const assistantId = getTrailingMessageId({
-                  messages: response.messages.filter(
-                    (message) => message.role === 'assistant',
-                  ),
-                });
-
-                if (!assistantId) {
-                  throw new Error('No assistant message found!');
+    // Create streaming response
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          let fullContent = '';
+          let assistantId = generateUUID();
+          let hasStreamedContent = false;
+          
+          console.log('Starting agent stream with messages:', langchainMessages.length);
+          
+          // Stream the agent response
+          const agentStream = await agent.stream(langchainMessages);
+          
+          for await (const chunk of agentStream) {
+            console.log('Received chunk:', Object.keys(chunk));
+            console.log('Full chunk structure:', JSON.stringify(chunk, null, 2));
+            
+            // Handle different types of chunks from LangGraph
+            if (chunk.agent && chunk.agent.messages) {
+              const messages = chunk.agent.messages;
+              const lastMessage = messages[messages.length - 1];
+              
+              console.log('Agent message type:', lastMessage.constructor.name);
+              console.log('Agent message content:', lastMessage.content);
+              console.log('Agent message content type:', typeof lastMessage.content);
+              console.log('Agent message content length:', lastMessage.content?.length);
+              console.log('Is AIMessage?', lastMessage instanceof AIMessage);
+              console.log('Has content?', !!lastMessage.content);
+              
+              if ((lastMessage instanceof AIMessage || lastMessage instanceof AIMessageChunk) && lastMessage.content) {
+                const newContent = lastMessage.content as string;
+                console.log('Processing content. Current length:', fullContent.length, 'New length:', newContent.length);
+                console.log('Full content so far:', JSON.stringify(fullContent));
+                console.log('New content:', JSON.stringify(newContent));
+                
+                // For streaming, we want to capture ALL content that comes through
+                if (newContent && newContent.length > 0) {
+                  console.log('Content check - fullContent:', JSON.stringify(fullContent));
+                  console.log('Content check - newContent:', JSON.stringify(newContent));
+                  console.log('Content check - are they equal?', newContent === fullContent);
+                  
+                  // Always process content if we have it
+                  let delta = '';
+                  
+                  if (!fullContent) {
+                    // First content - use it all as delta
+                    delta = newContent;
+                    fullContent = newContent;
+                    console.log('First content detected');
+                  } else if (newContent.length > fullContent.length && newContent.startsWith(fullContent)) {
+                    // Content is growing - extract the delta
+                    delta = newContent.slice(fullContent.length);
+                    fullContent = newContent;
+                    console.log('Growing content detected');
+                  } else if (newContent !== fullContent) {
+                    // Content is completely different - use it as delta
+                    delta = newContent;
+                    fullContent = newContent;
+                    console.log('Different content detected');
+                  }
+                  
+                  if (delta) {
+                    hasStreamedContent = true;
+                    console.log('Setting hasStreamedContent to true');
+                    console.log('Sending delta:', JSON.stringify(delta));
+                    
+                    const data = {
+                      type: 'text-delta',
+                      textDelta: delta,
+                    };
+                    
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
+                    );
+                  } else {
+                    console.log('No delta to send - content unchanged');
+                  }
                 }
-
-                const [, assistantMessage] = appendResponseMessages({
-                  messages: [message],
-                  responseMessages: response.messages,
-                });
-
-                await saveMessages({
-                  messages: [
-                    {
-                      id: assistantId,
-                      chatId: id,
-                      role: assistantMessage.role,
-                      parts: assistantMessage.parts,
-                      attachments:
-                        assistantMessage.experimental_attachments ?? [],
-                      createdAt: new Date(),
-                    },
-                  ],
-                });
-              } catch (_) {
-                console.error('Failed to save chat');
               }
             }
-          },
-          experimental_telemetry: {
-            isEnabled: isProductionEnvironment,
-            functionId: 'stream-text',
-          },
-        });
+            
+            if (chunk.tools) {
+              console.log('Tool execution:', chunk.tools);
+              // Handle tool execution
+              const data = {
+                type: 'tool-call',
+                toolCall: chunk.tools,
+              };
+              
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
+              );
+            }
+          }
 
-        result.consumeStream();
+          console.log('Final content:', fullContent);
+          console.log('Has streamed content:', hasStreamedContent);
 
-        result.mergeIntoDataStream(dataStream, {
-          sendReasoning: true,
-        });
-      },
-      onError: () => {
-        return 'Oops, an error occurred!';
+          // If we have content from streaming, save and finish
+          if (fullContent && hasStreamedContent) {
+            await saveMessages({
+              messages: [
+                {
+                  id: assistantId,
+                  chatId: id,
+                  role: 'assistant',
+                  parts: [{ type: 'text', text: fullContent }],
+                  attachments: [],
+                  createdAt: new Date(),
+                },
+              ],
+            });
+
+            // Send final message
+            const data = {
+              type: 'finish',
+              message: {
+                id: assistantId,
+                role: 'assistant',
+                content: fullContent,
+                createdAt: new Date(),
+              },
+            };
+            
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
+            );
+          } else {
+            console.error('No content received from streaming, trying invoke fallback');
+            // Fallback: try to get response using invoke
+            const fallbackResult = await agent.invoke(langchainMessages);
+            const lastMessage = fallbackResult[fallbackResult.length - 1];
+            
+            if (lastMessage instanceof AIMessage && lastMessage.content) {
+              const content = lastMessage.content as string;
+              console.log('Fallback content:', content);
+              
+              await saveMessages({
+                messages: [
+                  {
+                    id: assistantId,
+                    chatId: id,
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: content }],
+                    attachments: [],
+                    createdAt: new Date(),
+                  },
+                ],
+              });
+
+              // Send the content as text-delta first
+              const data = {
+                type: 'text-delta',
+                textDelta: content,
+              };
+              
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
+              );
+
+              // Then send finish message
+              const finishData = {
+                type: 'finish',
+                message: {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: content,
+                  createdAt: new Date(),
+                },
+              };
+              
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(finishData)}\n\n`)
+              );
+            } else {
+              console.error('No content from fallback either');
+              const errorData = {
+                type: 'error',
+                error: 'No response received from the agent.',
+              };
+              
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(errorData)}\n\n`)
+              );
+            }
+          }
+
+          controller.close();
+        } catch (error) {
+          console.error('Error in chat stream:', error);
+          const errorData = {
+            type: 'error',
+            error: 'An error occurred while processing your request.',
+          };
+          
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(errorData)}\n\n`)
+          );
+          controller.close();
+        }
       },
     });
 
-    const streamContext = getStreamContext();
-
-    if (streamContext) {
-      return new Response(
-        await streamContext.resumableStream(streamId, () => stream),
-      );
-    } else {
-      return new Response(stream);
-    }
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (error) {
     if (error instanceof ChatSDKError) {
       return error.toResponse();
     }
+    
+    console.error('Unexpected error in chat route:', error);
+    return new ChatSDKError('offline:chat').toResponse();
   }
 }
 
 export async function GET(request: Request) {
-  const streamContext = getStreamContext();
-  const resumeRequestedAt = new Date();
-
-  if (!streamContext) {
-    return new Response(null, { status: 204 });
-  }
-
   const { searchParams } = new URL(request.url);
   const chatId = searchParams.get('chatId');
 
@@ -275,62 +385,18 @@ export async function GET(request: Request) {
     return new ChatSDKError('forbidden:chat').toResponse();
   }
 
-  const streamIds = await getStreamIdsByChatId({ chatId });
+  const messages = await getMessagesByChatId({ id: chatId });
+  const mostRecentMessage = messages.at(-1);
 
-  if (!streamIds.length) {
-    return new ChatSDKError('not_found:stream').toResponse();
-  }
-
-  const recentStreamId = streamIds.at(-1);
-
-  if (!recentStreamId) {
-    return new ChatSDKError('not_found:stream').toResponse();
-  }
-
-  const emptyDataStream = createDataStream({
-    execute: () => {},
-  });
-
-  const stream = await streamContext.resumableStream(
-    recentStreamId,
-    () => emptyDataStream,
-  );
-
-  /*
-   * For when the generation is streaming during SSR
-   * but the resumable stream has concluded at this point.
-   */
-  if (!stream) {
-    const messages = await getMessagesByChatId({ id: chatId });
-    const mostRecentMessage = messages.at(-1);
-
-    if (!mostRecentMessage) {
-      return new Response(emptyDataStream, { status: 200 });
-    }
-
-    if (mostRecentMessage.role !== 'assistant') {
-      return new Response(emptyDataStream, { status: 200 });
-    }
-
-    const messageCreatedAt = new Date(mostRecentMessage.createdAt);
-
-    if (differenceInSeconds(resumeRequestedAt, messageCreatedAt) > 15) {
-      return new Response(emptyDataStream, { status: 200 });
-    }
-
-    const restoredStream = createDataStream({
-      execute: (buffer) => {
-        buffer.writeData({
-          type: 'append-message',
-          message: JSON.stringify(mostRecentMessage),
-        });
-      },
+  if (!mostRecentMessage || mostRecentMessage.role !== 'assistant') {
+    return new Response(JSON.stringify({ messages }), {
+      headers: { 'Content-Type': 'application/json' },
     });
-
-    return new Response(restoredStream, { status: 200 });
   }
 
-  return new Response(stream, { status: 200 });
+  return new Response(JSON.stringify({ messages }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 export async function DELETE(request: Request) {

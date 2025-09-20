@@ -1,20 +1,21 @@
-import type { UIMessage } from 'ai';
+import type { UIMessage } from './chat';
 import { PreviewMessage, ThinkingMessage } from './message';
 import { Greeting } from './greeting';
 import { memo } from 'react';
 import type { Vote } from '@/lib/db/schema';
 import equal from 'fast-deep-equal';
-import type { UseChatHelpers } from '@ai-sdk/react';
 import { motion } from 'framer-motion';
 import { useMessages } from '@/hooks/use-messages';
 
+type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error' | 'submitted';
+
 interface MessagesProps {
   chatId: string;
-  status: UseChatHelpers['status'];
+  status: ChatStatus;
   votes: Array<Vote> | undefined;
   messages: Array<UIMessage>;
-  setMessages: UseChatHelpers['setMessages'];
-  reload: UseChatHelpers['reload'];
+  setMessages: (messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[])) => void;
+  reload: () => void;
   isReadonly: boolean;
 }
 
@@ -81,7 +82,6 @@ function PureMessages({
 
 export const Messages = memo(PureMessages, (prevProps, nextProps) => {
   if (prevProps.status !== nextProps.status) return false;
-  if (prevProps.status && nextProps.status) return false;
   if (prevProps.messages.length !== nextProps.messages.length) return false;
   if (!equal(prevProps.messages, nextProps.messages)) return false;
   if (!equal(prevProps.votes, nextProps.votes)) return false;
