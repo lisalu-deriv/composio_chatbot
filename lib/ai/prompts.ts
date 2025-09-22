@@ -1,7 +1,7 @@
 import type { Geo } from '@vercel/functions';
 
 export const regularPrompt =
-  'You are a friendly assistant! Keep your responses concise and helpful.';
+  'You are a friendly assistant! Keep your responses concise and helpful. Make sure you define the tool name based on the tool list provided by Composio when you call a tool.';
 
 export interface RequestHints {
   latitude: Geo['latitude'];

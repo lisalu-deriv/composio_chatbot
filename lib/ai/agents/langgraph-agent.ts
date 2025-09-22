@@ -26,9 +26,14 @@ const createWeatherTool = (): DynamicTool => {
     description: 'Get the current weather for a location. Use this when users ask about weather conditions.',
     func: async (input: string) => {
       try {
+        // 🔍 LOG: Weather tool execution
+        console.log('🌤️ Weather tool called with input:', input);
+        
         // Parse the input to extract location parameters
         const params = JSON.parse(input);
         const { latitude, longitude } = params;
+        
+        console.log('📍 Weather API request:', { latitude, longitude });
         
         // Call the weather API directly
         const response = await fetch(
@@ -36,9 +41,16 @@ const createWeatherTool = (): DynamicTool => {
         );
         
         const weatherData = await response.json();
+        
+        console.log('🌡️ Weather API response received:', {
+          temperature: weatherData.current?.temperature_2m,
+          timezone: weatherData.timezone,
+          timestamp: new Date().toISOString(),
+        });
+        
         return JSON.stringify(weatherData);
       } catch (error) {
-        console.error('Weather tool error:', error);
+        console.error('❌ Weather tool error:', error);
         return 'Failed to get weather information';
       }
     },
@@ -124,10 +136,18 @@ export async function streamLangGraphAgent(
   maxSteps: number = 5
 ) {
   try {
+    // 🔍 LOG: Starting agent stream
+    console.log('\n=== LANGGRAPH STREAM START ===');
+    console.log('🚀 Starting LangGraph agent stream:', {
+      messageCount: messages.length,
+      maxSteps,
+      timestamp: new Date().toISOString(),
+    });
+
     // Stream events from the agent execution
     const eventStream = await agent.streamEvents(
       { messages },
-      { 
+      {
         version: 'v2',
         recursionLimit: maxSteps,
         configurable: {
@@ -138,7 +158,7 @@ export async function streamLangGraphAgent(
 
     return eventStream;
   } catch (error) {
-    console.error('LangGraph agent streaming error:', error);
+    console.error('❌ LangGraph agent streaming error:', error);
     throw error;
   }
 }

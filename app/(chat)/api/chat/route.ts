@@ -84,6 +84,17 @@ export async function POST(request: Request) {
       enabledToolkits,
     } = requestBody;
 
+    // 🔍 LOG: Request sent to agent
+    console.log('\n=== CHAT REQUEST ===');
+    console.log('📨 Request sent to agent:', {
+      chatId: id,
+      messageId: message.id,
+      messageContent: message.parts.map(part => part.type === 'text' ? part.text : `[${part.type}]`).join(' '),
+      selectedModel: selectedChatModel,
+      enabledToolkits: enabledToolkits?.map(t => t.slug) || [],
+      timestamp: new Date().toISOString(),
+    });
+
     const session = await auth();
 
     if (!session?.user) {
@@ -159,6 +170,16 @@ export async function POST(request: Request) {
           // Extract just the slugs for the toolkits
           const toolkitSlugs = enabledToolkits?.map((t) => t.slug) || [];
 
+          // 🔍 LOG: Agent configuration
+          console.log('\n=== LANGGRAPH AGENT SETUP ===');
+          console.log('🤖 Creating LangGraph agent with:', {
+            userId: session.user.id,
+            toolkitSlugs,
+            model: 'gpt-4o',
+            maxSteps: 5,
+            timestamp: new Date().toISOString(),
+          });
+
           // Create LangGraph agent with Composio tools
           const { agent, maxSteps } = await createLangGraphAgent({
             userId: session.user.id,
@@ -174,15 +195,41 @@ export async function POST(request: Request) {
             messages.filter((msg) => msg.role === 'user' || msg.role === 'assistant')
           );
 
+          // 🔍 LOG: Messages being sent to agent
+          console.log('\n=== MESSAGES TO AGENT ===');
+          console.log('💬 LangChain messages:', langchainMessages.map(msg => ({
+            type: msg._getType(),
+            content: typeof msg.content === 'string' ? msg.content.substring(0, 200) + '...' : '[complex content]',
+          })));
+
           // Stream the LangGraph agent execution
           const eventStream = await streamLangGraphAgent(agent, langchainMessages, maxSteps);
 
           // Process the stream and convert back to AI SDK format
           let finalResponse: any = null;
+          let toolCallCount = 0;
           const textEncoder = new TextEncoder();
 
+          console.log('\n=== AGENT EXECUTION STREAM ===');
+          
           for await (const { event, data } of eventStream) {
-            if (event === 'on_chat_model_stream') {
+            // 🔍 LOG: Stream events
+            if (event === 'on_tool_start') {
+              toolCallCount++;
+              console.log(`🔧 Tool Call #${toolCallCount} START:`, {
+                toolName: data.name,
+                input: data.input,
+                timestamp: new Date().toISOString(),
+              });
+            } else if (event === 'on_tool_end') {
+              console.log(`✅ Tool Call #${toolCallCount} END:`, {
+                toolName: data.name,
+                output: typeof data.output === 'string' ?
+                  data.output.substring(0, 500) + (data.output.length > 500 ? '...' : '') :
+                  data.output,
+                timestamp: new Date().toISOString(),
+              });
+            } else if (event === 'on_chat_model_stream') {
               // Stream content from the chat model
               if (data.chunk?.content) {
                 dataStream.writeData({
@@ -193,6 +240,10 @@ export async function POST(request: Request) {
             } else if (event === 'on_chain_end' && data.output?.messages) {
               // Capture the final response for saving
               finalResponse = data.output;
+              console.log('🏁 Chain execution completed:', {
+                messageCount: data.output.messages?.length || 0,
+                timestamp: new Date().toISOString(),
+              });
             }
           }
 
@@ -203,6 +254,15 @@ export async function POST(request: Request) {
               if (lastMessage && lastMessage._getType() === 'ai') {
                 const assistantId = generateUUID();
                 const vercelMessage = convertLangChainMessageToVercelMessage(lastMessage);
+
+                // 🔍 LOG: Final agent response
+                console.log('\n=== AGENT RESPONSE ===');
+                console.log('🤖 Response from agent:', {
+                  messageId: assistantId,
+                  content: vercelMessage.content.substring(0, 500) + (vercelMessage.content.length > 500 ? '...' : ''),
+                  contentLength: vercelMessage.content.length,
+                  timestamp: new Date().toISOString(),
+                });
 
                 await saveMessages({
                   messages: [
@@ -216,20 +276,29 @@ export async function POST(request: Request) {
                     },
                   ],
                 });
+
+                console.log('✅ Agent response saved to database');
               }
             } catch (error) {
-              console.error('Failed to save LangGraph response:', error);
+              console.error('❌ Failed to save LangGraph response:', error);
             }
           }
 
         } catch (error) {
-          console.error('LangGraph execution error:', error);
+          console.error('❌ LangGraph execution error:', error);
           
           // Fallback to original AI SDK implementation
-          console.log('Falling back to original AI SDK implementation...');
+          console.log('\n=== FALLBACK TO AI SDK ===');
+          console.log('🔄 Falling back to original AI SDK implementation...');
           
           const toolkitSlugs = enabledToolkits?.map((t) => t.slug) || [];
           const composioTools = await getComposioTools(session.user.id, toolkitSlugs);
+
+          console.log('🛠️ AI SDK tools available:', {
+            weatherTool: 'getWeather',
+            composioTools: Object.keys(composioTools),
+            timestamp: new Date().toISOString(),
+          });
 
           const result = streamText({
             model: myProvider.languageModel(selectedChatModel),
@@ -260,6 +329,26 @@ export async function POST(request: Request) {
                     responseMessages: response.messages,
                   });
 
+                  // 🔍 LOG: AI SDK response
+                  console.log('\n=== AI SDK RESPONSE ===');
+                  console.log('🤖 Response from AI SDK:', {
+                    messageId: assistantId,
+                    role: assistantMessage.role,
+                    partsCount: assistantMessage.parts?.length || 0,
+                    content: assistantMessage.parts
+                      ?.filter(part => part.type === 'text')
+                      ?.map(part => part.text?.substring(0, 200) + '...')
+                      ?.join(' ') || '[no text content]',
+                    toolCalls: response.messages
+                      .filter(msg => msg.role === 'assistant' && 'toolInvocations' in msg)
+                      .flatMap(msg => (msg as any).toolInvocations || [])
+                      .map((tool: any) => ({
+                        toolName: tool.toolName,
+                        state: tool.state,
+                      })),
+                    timestamp: new Date().toISOString(),
+                  });
+
                   await saveMessages({
                     messages: [
                       {
@@ -273,8 +362,10 @@ export async function POST(request: Request) {
                       },
                     ],
                   });
-                } catch (_) {
-                  console.error('Failed to save chat');
+
+                  console.log('✅ AI SDK response saved to database');
+                } catch (error) {
+                  console.error('❌ Failed to save AI SDK chat:', error);
                 }
               }
             },

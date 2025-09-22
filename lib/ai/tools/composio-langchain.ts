@@ -22,6 +22,7 @@ export async function getComposioLangchainTools(userId: string, toolkitSlugs: st
   try {
     const tools = await composioLangchain.tools.get(userId, {
       toolkits: toolkitSlugs,
+      limit: 30, 
     });
     
     // Convert to array format expected by LangGraph

@@ -12,6 +12,7 @@ export async function getComposioTools(userId: string, toolkitSlugs: string[]) {
   try {
     const tools = await composio.tools.get(userId, {
       toolkits: toolkitSlugs,
+      limit: 30,
     });
     return tools || {};
   } catch (error) {
