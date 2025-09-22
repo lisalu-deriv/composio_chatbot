@@ -18,6 +18,16 @@ About the origin of user's request:
 - country: ${requestHints.country}
 `;
 
+export const getCurrentTimePrompt = () => {
+  const now = new Date();
+  return `\
+Current time information:
+- Current UTC time: ${now.toISOString()}
+- Current local time: ${now.toLocaleString()}
+- Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
+`;
+};
+
 export const systemPrompt = ({
   selectedChatModel,
   requestHints,
@@ -26,5 +36,6 @@ export const systemPrompt = ({
   requestHints: RequestHints;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
-  return `${regularPrompt}\n\n${requestPrompt}`;
+  const timePrompt = getCurrentTimePrompt();
+  return `${regularPrompt}\n\n${requestPrompt}\n\n${timePrompt}`;
 };

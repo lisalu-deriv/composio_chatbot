@@ -17,27 +17,25 @@
 
 ## Features
 
-- **Real-time AI Chat** - Powered by Anthropic Claude models (claude-4-sonnet)
+- **Advanced Agent Reasoning** - LangGraph React Agent with structured tool calling and multi-step reasoning
+- **Hybrid AI Architecture** - LangGraph for agent creation + AI SDK for streaming and UI integration
 - **Multiple Artifacts** - Support for code, documents, images, and spreadsheets
 - **File Processing** - Upload and process various document types
 - **Chat History** - Public/private visibility with persistent storage
 - **User Interactions** - Voting and suggestions system
 - **Multi-modal Input** - Text, voice, and file inputs
-- **Third-party Integrations** - Access to 300+ apps via Composio
+- **Third-party Integrations** - Access to 300+ apps via Composio with enhanced tool calling
+- **Robust Error Handling** - Graceful fallback mechanisms for reliable user experience
 
 ## Tech Stack
 
 - **[Next.js 15](https://nextjs.org)** - App Router with React Server Components
-- **[AI SDK](https://sdk.vercel.ai)** - Anthropic Claude integration
+- **[LangGraph](https://langchain-ai.github.io/langgraphjs/)** - Advanced agent workflows and tool calling
+- **[AI SDK](https://sdk.vercel.ai)** - Message streaming and UI integration
 - **[Composio](https://composio.dev)** - Third-party app integrations (300+ apps)
 - **[Drizzle ORM](https://orm.drizzle.team)** - PostgreSQL database
 - **[Auth.js](https://authjs.dev)** - Authentication system
 - **[shadcn/ui](https://ui.shadcn.com)** - UI components with Tailwind CSS
-
-## Deploy your own
-You can deploy your version with one click:
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FComposioHQ%2Fchat%2F&env=BLOB_READ_WRITE_TOKEN,COMPOSIO_API_KEY,NEXT_PUBLIC_COMPOSIO_AUTH_GITHUB,NEXT_PUBLIC_COMPOSIO_AUTH_GMAIL,NEXT_PUBLIC_COMPOSIO_AUTH_GOOGLECALENDAR,NEXT_PUBLIC_COMPOSIO_AUTH_LINEAR,NEXT_PUBLIC_COMPOSIO_AUTH_NOTION,NEXT_PUBLIC_COMPOSIO_AUTH_SLACK,VERCEL_OIDC_TOKEN&envDescription=Learn%20more%20about%20how%20to%20get%20the%20API%20Keys%20for%20the%20application&envLink=https%3A%2F%2Fgithub.com%2Fcomposiohq%2Fchat%2Fblob%2Fmain%2F.env.example&demo-title=Composio%20Chat&demo-description=A%20working%20full-stack%20agentic%20chat%20app%20built%20with%20Composio%20and%20Vercel%20AI%20SDK.&demo-url=https%3A%2F%2Fchat.composio.dev)
 
 
 ## Running locally
@@ -74,7 +72,7 @@ You can deploy your version with one click:
    - **Composio API key** from [app.composio.dev](https://app.composio.dev/developers)
    - **Database connection** details
    - **Authentication providers** (Google, GitHub, etc.)
-   - **Anthropic API key** for Claude models
+   - **OPENAI API key** for Openai models
 
 4. **Run database migrations**
 
@@ -97,7 +95,7 @@ Visit [http://localhost:3000](http://localhost:3000) to see your application.
 | `pnpm build`       | Run database migrations and build production app |
 | `pnpm lint`        | Run Next.js and Biome linting with auto-fix      |
 | `pnpm format`      | Format code with Biome                           |
-| `pnpm test`        | Run Playwright e2e tests                         |
+| `pnpm test`        | Run Playwright e2e and unit tests                |
 | `pnpm db:migrate`  | Run database migrations                          |
 | `pnpm db:generate` | Generate Drizzle migrations                      |
 | `pnpm db:studio`   | Open Drizzle Studio for database inspection      |
@@ -115,9 +113,12 @@ chat/
 ├── components/          # Reusable UI components
 ├── lib/
 │   ├── ai/              # AI model configuration and tools
+│   │   ├── agents/      # LangGraph agent implementations
+│   │   ├── tools/       # AI tools (Composio, weather, etc.)
+│   │   └── utils/       # Message conversion utilities
 │   └── db/              # Database schema and utilities
 ├── hooks/               # Custom React hooks
-└── tests/               # Playwright e2e tests
+└── tests/               # Playwright e2e and unit tests
 ```
 
 ## Composio Integration
@@ -145,10 +146,21 @@ For detailed Composio documentation, see `composio-docs.md`.
 
 ### AI Integration
 
-- Default model: `claude-4-sonnet-20250514` for chat, `claude-3-5-haiku-latest` for titles
-- Configurable via `/lib/ai/providers.ts`
+#### Hybrid Architecture
+- **LangGraph Agent**: Uses `gpt-4o` with React Agent pattern for enhanced reasoning and tool calling
+- **Graceful Fallback**: Automatically falls back to AI SDK when LangGraph encounters errors
+
+#### Configuration
+- Models configurable via `/lib/ai/providers.ts`
 - Test environment uses mock models from `/lib/ai/models.test.ts`
 - AI tools defined in `/lib/ai/tools/`
+- LangGraph agents in `/lib/ai/agents/`
+
+#### Agent Features
+- **React Agent Pattern**: Structured reasoning with up to 5 steps
+- **Enhanced Tool Calling**: Improved Composio integration via LangchainProvider
+- **Real-time Context**: System prompt includes current time information
+- **Message Conversion**: Seamless format conversion between LangGraph and AI SDK
 
 ### Database Schema
 

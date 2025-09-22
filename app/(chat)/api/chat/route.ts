@@ -34,6 +34,12 @@ import type { Chat } from '@/lib/db/schema';
 import { differenceInSeconds } from 'date-fns';
 import { ChatSDKError } from '@/lib/errors';
 import { getComposioTools } from '@/lib/ai/tools/composio';
+// LangGraph imports
+import { createLangGraphAgent, streamLangGraphAgent } from '@/lib/ai/agents/langgraph-agent';
+import {
+  convertVercelMessagesToLangChain,
+  convertLangChainMessageToVercelMessage
+} from '@/lib/ai/utils/message-conversion';
 
 export const maxDuration = 60;
 
@@ -149,73 +155,140 @@ export async function POST(request: Request) {
 
     const stream = createDataStream({
       execute: async (dataStream) => {
-        // Extract just the slugs for the getComposioTools function
-        const toolkitSlugs = enabledToolkits?.map((t) => t.slug) || [];
+        try {
+          // Extract just the slugs for the toolkits
+          const toolkitSlugs = enabledToolkits?.map((t) => t.slug) || [];
 
-        // Fetch Composio tools if toolkits are enabled
-        const composioTools = await getComposioTools(
-          session.user.id,
-          toolkitSlugs,
-        );
+          // Create LangGraph agent with Composio tools
+          const { agent, maxSteps } = await createLangGraphAgent({
+            userId: session.user.id,
+            toolkitSlugs,
+            systemPrompt: systemPrompt({ selectedChatModel, requestHints }),
+            model: 'gpt-4o', // Use OpenAI model for LangGraph
+            temperature: 0,
+            maxSteps: 5,
+          });
 
-        const result = streamText({
-          model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel, requestHints }),
-          messages,
-          maxSteps: 5,
-          experimental_transform: smoothStream({ chunking: 'word' }),
-          experimental_generateMessageId: generateUUID,
-          tools: {
-            getWeather,
-            ...composioTools,
-          },
-          onFinish: async ({ response }) => {
-            if (session.user?.id) {
-              try {
-                const assistantId = getTrailingMessageId({
-                  messages: response.messages.filter(
-                    (message) => message.role === 'assistant',
-                  ),
+          // Convert Vercel messages to LangChain format
+          const langchainMessages = convertVercelMessagesToLangChain(
+            messages.filter((msg) => msg.role === 'user' || msg.role === 'assistant')
+          );
+
+          // Stream the LangGraph agent execution
+          const eventStream = await streamLangGraphAgent(agent, langchainMessages, maxSteps);
+
+          // Process the stream and convert back to AI SDK format
+          let finalResponse: any = null;
+          const textEncoder = new TextEncoder();
+
+          for await (const { event, data } of eventStream) {
+            if (event === 'on_chat_model_stream') {
+              // Stream content from the chat model
+              if (data.chunk?.content) {
+                dataStream.writeData({
+                  type: 'text-delta',
+                  textDelta: data.chunk.content,
                 });
+              }
+            } else if (event === 'on_chain_end' && data.output?.messages) {
+              // Capture the final response for saving
+              finalResponse = data.output;
+            }
+          }
 
-                if (!assistantId) {
-                  throw new Error('No assistant message found!');
-                }
-
-                const [, assistantMessage] = appendResponseMessages({
-                  messages: [message],
-                  responseMessages: response.messages,
-                });
+          // Save the final response to database
+          if (finalResponse?.messages && session.user?.id) {
+            try {
+              const lastMessage = finalResponse.messages[finalResponse.messages.length - 1];
+              if (lastMessage && lastMessage._getType() === 'ai') {
+                const assistantId = generateUUID();
+                const vercelMessage = convertLangChainMessageToVercelMessage(lastMessage);
 
                 await saveMessages({
                   messages: [
                     {
                       id: assistantId,
                       chatId: id,
-                      role: assistantMessage.role,
-                      parts: assistantMessage.parts,
-                      attachments:
-                        assistantMessage.experimental_attachments ?? [],
+                      role: 'assistant',
+                      parts: [{ type: 'text', text: vercelMessage.content }],
+                      attachments: [],
                       createdAt: new Date(),
                     },
                   ],
                 });
-              } catch (_) {
-                console.error('Failed to save chat');
               }
+            } catch (error) {
+              console.error('Failed to save LangGraph response:', error);
             }
-          },
-          experimental_telemetry: {
-            isEnabled: isProductionEnvironment,
-            functionId: 'stream-text',
-          },
-        });
+          }
 
-        result.consumeStream();
+        } catch (error) {
+          console.error('LangGraph execution error:', error);
+          
+          // Fallback to original AI SDK implementation
+          console.log('Falling back to original AI SDK implementation...');
+          
+          const toolkitSlugs = enabledToolkits?.map((t) => t.slug) || [];
+          const composioTools = await getComposioTools(session.user.id, toolkitSlugs);
 
-        result.mergeIntoDataStream(dataStream, {
-          sendReasoning: true,
-        });
+          const result = streamText({
+            model: myProvider.languageModel(selectedChatModel),
+            system: systemPrompt({ selectedChatModel, requestHints }),
+            messages,
+            maxSteps: 5,
+            experimental_transform: smoothStream({ chunking: 'word' }),
+            experimental_generateMessageId: generateUUID,
+            tools: {
+              getWeather,
+              ...composioTools,
+            },
+            onFinish: async ({ response }) => {
+              if (session.user?.id) {
+                try {
+                  const assistantId = getTrailingMessageId({
+                    messages: response.messages.filter(
+                      (message) => message.role === 'assistant',
+                    ),
+                  });
+
+                  if (!assistantId) {
+                    throw new Error('No assistant message found!');
+                  }
+
+                  const [, assistantMessage] = appendResponseMessages({
+                    messages: [message],
+                    responseMessages: response.messages,
+                  });
+
+                  await saveMessages({
+                    messages: [
+                      {
+                        id: assistantId,
+                        chatId: id,
+                        role: assistantMessage.role,
+                        parts: assistantMessage.parts,
+                        attachments:
+                          assistantMessage.experimental_attachments ?? [],
+                        createdAt: new Date(),
+                      },
+                    ],
+                  });
+                } catch (_) {
+                  console.error('Failed to save chat');
+                }
+              }
+            },
+            experimental_telemetry: {
+              isEnabled: isProductionEnvironment,
+              functionId: 'stream-text',
+            },
+          });
+
+          result.consumeStream();
+          result.mergeIntoDataStream(dataStream, {
+            sendReasoning: true,
+          });
+        }
       },
       onError: () => {
         return 'Oops, an error occurred!';
