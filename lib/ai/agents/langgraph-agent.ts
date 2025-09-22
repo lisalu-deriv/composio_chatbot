@@ -2,6 +2,8 @@ import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { ChatOpenAI } from '@langchain/openai';
 import { SystemMessage } from '@langchain/core/messages';
 import { getComposioLangchainTools } from '@/lib/ai/tools/composio-langchain';
+import { getComposioToolsWithSearch } from '@/lib/ai/tools/composio-search';
+import { createToolSearchTool, createListToolsTool } from '@/lib/ai/tools/dynamic-tool-search';
 import { DynamicTool } from '@langchain/community/tools/dynamic';
 import { z } from 'zod';
 
@@ -77,14 +79,34 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
     temperature,
   });
 
-  // Fetch Composio tools for LangChain
-  const composioTools = await getComposioLangchainTools(userId, toolkitSlugs);
+  // Fetch Composio tools using the enhanced search-based approach
+  console.log('🔧 Fetching tools with search capability...');
+  const composioTools = await getComposioToolsWithSearch(userId, {
+    toolkitSlugs,
+    searchQueries: ['branch repository list'], // Pre-search for branch tools
+    specificTools: ['GITHUB_LIST_BRANCHES', 'GITHUB_GET_A_BRANCH'], // Ensure branch tools are available
+    topToolsLimit: 20, // Get top 20 important tools
+    searchLimit: 10,
+  });
   
   // Create weather tool
   const weatherTool = createWeatherTool();
   
+  // Create dynamic tool search capability
+  const toolSearchTool = createToolSearchTool(userId);
+  const listToolsTool = createListToolsTool(composioTools);
+  
   // Combine all tools - ensure proper typing
-  const tools = [weatherTool, ...composioTools].filter(Boolean);
+  const tools = [weatherTool, toolSearchTool, listToolsTool, ...composioTools].filter(Boolean);
+  
+  console.log('🛠️ LangGraph agent tools summary:', {
+    weatherTool: 1,
+    toolSearchTool: 1,
+    listToolsTool: 1,
+    composioTools: composioTools.length,
+    totalTools: tools.length,
+    sampleComposioTools: composioTools.slice(0, 5).map(t => t.name),
+  });
 
   // Create the React agent with system prompt and tools
   const agent = createReactAgent({
