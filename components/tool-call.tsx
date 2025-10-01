@@ -1,187 +1,298 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronDown, ChevronUp, Wrench } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronUp, Clock3, Terminal, Wrench } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Skeleton } from './ui/skeleton';
 
+type ToolCallStatus = 'pending' | 'success' | 'error';
+
 interface ToolCallProps {
   toolName: string;
-  args?: any;
-  result?: any;
+  callId?: string;
+  args?: unknown;
+  result?: unknown;
+  error?: unknown;
+  status?: ToolCallStatus;
   isLoading?: boolean;
 }
 
+const STATUS_META: Record<ToolCallStatus, { label: string; className: string }> = {
+  pending: {
+    label: 'Pending',
+    className:
+      'border border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-300/60 dark:bg-amber-950 dark:text-amber-100',
+  },
+  success: {
+    label: 'Completed',
+    className:
+      'border border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-300/60 dark:bg-emerald-950 dark:text-emerald-100',
+  },
+  error: {
+    label: 'Failed',
+    className:
+      'border border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-300/60 dark:bg-rose-950 dark:text-rose-100',
+  },
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+const safeStringify = (data: unknown) => {
+  try {
+    return JSON.stringify(data, null, 2);
+  } catch (error) {
+    console.error('Failed to stringify tool call data', error);
+    return 'Unable to stringify payload';
+  }
+};
+
+const renderLeafValue = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return <span className="text-xs text-muted-foreground">null</span>;
+  }
+
+  if (typeof value === 'boolean') {
+    return (
+      <span className="rounded-md border px-2 py-0.5 text-xs uppercase tracking-wide">
+        {value ? 'TRUE' : 'FALSE'}
+      </span>
+    );
+  }
+
+  if (typeof value === 'number') {
+    return <span className="font-mono text-sm">{value}</span>;
+  }
+
+  if (typeof value === 'string') {
+    return <span className="text-sm leading-relaxed">{value}</span>;
+  }
+
+  if (Array.isArray(value) || isPlainObject(value)) {
+    return (
+      <pre className="max-h-48 overflow-auto rounded-md bg-muted/70 p-3 text-xs">
+        {safeStringify(value)}
+      </pre>
+    );
+  }
+
+  return <span className="text-sm">{String(value)}</span>;
+};
+
+const renderStructuredContent = (data: unknown) => {
+  if (data === null || data === undefined) {
+    return (
+      <div className="rounded-md border border-dashed p-4 text-xs text-muted-foreground">
+        No data available for this section.
+      </div>
+    );
+  }
+
+  if (Array.isArray(data)) {
+    if (data.length === 0) {
+      return (
+        <div className="rounded-md border border-dashed p-4 text-xs text-muted-foreground">
+          Empty array
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {data.map((item, index) => (
+          <div key={`${index}-${typeof item}`} className="space-y-2 rounded-md border p-3">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Item {index + 1}
+            </div>
+            {renderStructuredContent(item)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (isPlainObject(data)) {
+    return (
+      <div className="max-h-80 overflow-auto rounded-md border p-4">
+        <div className="space-y-3">
+          {Object.entries(data).map(([key, value]) => (
+            <div key={key} className="grid grid-cols-3 gap-4 border-b pb-3 last:border-0">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {key}
+              </div>
+              <div className="col-span-2 space-y-2 text-sm">
+                {renderLeafValue(value)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return renderLeafValue(data);
+};
+
 export function ToolCall({
   toolName,
+  callId,
   args,
   result,
+  error,
+  status,
   isLoading = false,
 }: ToolCallProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
+  const [activeSection, setActiveSection] = useState<'request' | 'response'>(
+    result ? 'response' : 'request',
+  );
+  const [viewMode, setViewMode] = useState<'structured' | 'json'>('structured');
 
-  // Format tool name for display (e.g., "GITHUB_CREATE_ISSUE" -> "GitHub Create Issue")
-  const formatToolName = (name: string) => {
-    return name
+  const derivedStatus = useMemo<ToolCallStatus>(() => {
+    if (status) {
+      return status;
+    }
+
+    if (!isLoading && (error || (isPlainObject(result) && 'error' in (result as Record<string, unknown>)))) {
+      return 'error';
+    }
+
+    if (!isLoading && result !== undefined) {
+      return 'success';
+    }
+
+    return 'pending';
+  }, [status, isLoading, error, result]);
+
+  const displayName = useMemo(() => {
+    return toolName
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
-  };
+  }, [toolName]);
 
-  // Render parameters in table format
-  const renderParametersTable = (params: any) => {
-    if (!params || typeof params !== 'object') return null;
+  const statusMeta = STATUS_META[derivedStatus];
 
-    return (
-      <div className="max-h-64 overflow-auto rounded-md border p-4">
-        <div className="space-y-2">
-          {Object.entries(params).map(([key, value]) => (
-            <div
-              key={key}
-              className="grid grid-cols-3 gap-4 py-2 border-b last:border-0"
-            >
-              <div className="font-mono text-sm text-muted-foreground">
-                {key}
-              </div>
-              <div className="col-span-2 text-sm">
-                {typeof value === 'object'
-                  ? JSON.stringify(value, null, 2)
-                  : String(value)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  const requestJson = useMemo(() => safeStringify(args), [args]);
+  const responseJson = useMemo(() => safeStringify(error ?? result), [error, result]);
 
-  // Render response in table format (simplified for now)
-  const renderResponseTable = (response: any) => {
-    if (!response || typeof response !== 'object') return null;
-
-    return (
-      <div className="max-h-96 overflow-auto rounded-md border p-4">
-        <div className="space-y-2">
-          {Object.entries(response).map(([key, value]) => (
-            <div
-              key={key}
-              className="grid grid-cols-3 gap-4 py-2 border-b last:border-0"
-            >
-              <div className="font-mono text-sm text-muted-foreground">
-                {key}
-              </div>
-              <div className="col-span-2 text-sm">
-                {typeof value === 'object' ? (
-                  <pre className="whitespace-pre-wrap">
-                    {JSON.stringify(value, null, 2)}
-                  </pre>
-                ) : (
-                  String(value)
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  const hasResponseData = Boolean(result) || Boolean(error);
 
   return (
     <Card className="w-full max-w-2xl">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Wrench className="size-4" />
-            <CardTitle className="text-base">
-              {formatToolName(toolName)}
-            </CardTitle>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-1 items-start gap-3">
+            <div className="rounded-full border border-border/70 bg-muted p-1">
+              <Wrench className="size-4" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-base leading-tight">{displayName}</CardTitle>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusMeta.className}`}>
+                  {statusMeta.label}
+                </span>
+                {callId ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <Terminal className="size-3" />
+                    {callId}
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
       </CardHeader>
 
       <CardContent>
-        {/* Calling tool section */}
-        <div className="mb-4">
+        <div className="mb-4 flex items-center justify-between">
           <button
             type="button"
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setIsExpanded((prev) => !prev)}
+            className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            {isExpanded ? (
-              <ChevronUp className="size-4" />
-            ) : (
-              <ChevronDown className="size-4" />
-            )}
-            Calling tool {toolName}
+            {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            View tool call details
           </button>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Clock3 className="size-3.5" />
+            Recorded in conversation
+          </div>
         </div>
 
-        {isExpanded && (
-          <div className="space-y-4">
-            {/* View mode toggle */}
-            {result && (
-              <div className="flex justify-end">
-                <Tabs
-                  value={viewMode}
-                  onValueChange={(v) => setViewMode(v as 'table' | 'json')}
-                >
-                  <TabsList className="grid w-[200px] grid-cols-2">
-                    <TabsTrigger value="table">Table</TabsTrigger>
-                    <TabsTrigger value="json">JSON</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-            )}
+        {isExpanded ? (
+          <div className="space-y-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Tabs
+                value={activeSection}
+                onValueChange={(value) => setActiveSection(value as 'request' | 'response')}
+                className="w-full sm:w-auto"
+              >
+                <TabsList className="grid w-full grid-cols-2 sm:w-64">
+                  <TabsTrigger value="request">Request</TabsTrigger>
+                  <TabsTrigger value="response" disabled={!hasResponseData && !isLoading}>
+                    Response
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
 
-            {/* Parameters section */}
-            {args && (
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium text-muted-foreground">
-                  Parameters
-                </h4>
-                {viewMode === 'table' ? (
-                  renderParametersTable(args)
-                ) : (
-                  <pre className="p-4 bg-muted rounded-md text-xs overflow-auto max-h-64">
-                    {JSON.stringify(args, null, 2)}
-                  </pre>
-                )}
-              </div>
-            )}
+              <Tabs
+                value={viewMode}
+                onValueChange={(value) => setViewMode(value as 'structured' | 'json')}
+                className="w-full sm:w-auto"
+              >
+                <TabsList className="grid w-full grid-cols-2 sm:w-56">
+                  <TabsTrigger value="structured">Structured</TabsTrigger>
+                  <TabsTrigger value="json">JSON</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
 
-            {/* Loading state */}
-            {isLoading && (
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium text-muted-foreground">
-                  Response
-                </h4>
+            {activeSection === 'request' ? (
+              viewMode === 'json' ? (
+                <pre className="max-h-80 overflow-auto rounded-md bg-muted p-4 text-xs">
+                  {requestJson}
+                </pre>
+              ) : (
+                renderStructuredContent(args)
+              )
+            ) : null}
+
+            {activeSection === 'response' ? (
+              isLoading ? (
                 <div className="space-y-2">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-4 w-1/2" />
+                  <div className="text-sm font-medium text-muted-foreground">Awaiting response...</div>
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-5/6" />
+                    <Skeleton className="h-4 w-2/3" />
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* Response section */}
-            {result && !isLoading && (
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium text-muted-foreground">
-                  Response
-                </h4>
-                {viewMode === 'table' ? (
-                  renderResponseTable(result)
-                ) : (
-                  <pre className="p-4 bg-muted rounded-md text-xs overflow-auto max-h-96">
-                    {JSON.stringify(result, null, 2)}
+              ) : hasResponseData ? (
+                viewMode === 'json' ? (
+                  <pre className="max-h-96 overflow-auto rounded-md bg-muted p-4 text-xs">
+                    {responseJson}
                   </pre>
-                )}
-              </div>
-            )}
+                ) : (
+                  <div className="space-y-4">
+                    {error ? (
+                      <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-400/50 dark:bg-rose-950/60 dark:text-rose-100">
+                        Tool execution failed: {typeof error === 'string' ? error : responseJson}
+                      </div>
+                    ) : null}
+                    {renderStructuredContent(result)}
+                  </div>
+                )
+              ) : (
+                <div className="rounded-md border border-dashed p-4 text-xs text-muted-foreground">
+                  No response recorded for this tool call.
+                </div>
+              )
+            ) : null}
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );

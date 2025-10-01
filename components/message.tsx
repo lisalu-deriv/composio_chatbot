@@ -179,7 +179,9 @@ const PurePreviewMessage = ({
                       ) : (
                         <ToolCall
                           toolName={toolName}
+                          callId={toolCallId}
                           args={args}
+                          status="pending"
                           isLoading={true}
                         />
                       )}
@@ -205,6 +207,7 @@ const PurePreviewMessage = ({
                       ) : (
                         <ToolCall
                           toolName={toolName}
+                          callId={toolCallId}
                           args={toolInvocation.args}
                           result={result}
                           isLoading={false}

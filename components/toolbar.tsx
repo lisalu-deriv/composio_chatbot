@@ -48,13 +48,15 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
 // Map of toolkit slugs to their auth config environment variables
-const TOOLKIT_AUTH_CONFIG: Record<string, string> = {
-  GMAIL: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GMAIL || '',
-  GOOGLECALENDAR: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GOOGLECALENDAR || '',
-  GITHUB: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GITHUB || '',
-  NOTION: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_NOTION || '',
-  SLACK: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_SLACK || '',
-  LINEAR: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_LINEAR || '',
+const TOOLKIT_AUTH_CONFIG: Record<string, string | undefined> = {
+  GMAIL: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GMAIL,
+  GOOGLECALENDAR: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GOOGLECALENDAR,
+  GITHUB: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GITHUB,
+  NOTION: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_NOTION,
+  SLACK: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_SLACK,
+  LINEAR: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_LINEAR,
+  GOOGLEDOCS: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GOOGLEDOCS,
+  GOOGLEDRIVE: process.env.NEXT_PUBLIC_COMPOSIO_AUTH_GOOGLEDRIVE,
 };
 
 const TOOLBAR_COOKIE_NAME = 'toolbar:state';
@@ -201,6 +203,17 @@ function ToolCard({
       return;
     }
 
+    const normalizedConfigId = authConfigId.trim();
+
+    if (!normalizedConfigId) {
+      toast({
+        title: 'Configuration error',
+        description: `Auth configuration is empty for ${toolkit.name}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsConnecting(true);
     setConnectionStatus('connecting');
     try {
@@ -209,7 +222,7 @@ function ToolCard({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ authConfigId }),
+        body: JSON.stringify({ authConfigId: normalizedConfigId }),
       });
 
       if (!response.ok) {

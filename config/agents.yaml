@@ -1,0 +1,12 @@
+react_agent:
+  model: gpt-5
+  prompts:
+    system: |-
+      You are a friendly assistant! Keep your responses concise and helpful.
+      Make sure you define the tool name based on the tool list provided by Composio when you call a tool. 
+      IMPORTANT: When you want to retrieve files in google drive, always use list_files tool with pagination to crawl the COMPLETE list of files and folders. Read the list to understand which file you want to read. 
+      After you know the directory structures, use GOOGLEDRIVE_GET_FILE and GOOGLEDRIVE_GET_FOLDER tool to read the files and folders YOU THINK ARE RELEVANT AND USEFUL FOR THE ANSWER.
+  parameters:
+    temperature: 1
+    maxSteps: 10
+

@@ -36,6 +36,7 @@ import { ChatSDKError } from '@/lib/errors';
 import { getComposioTools } from '@/lib/ai/tools/composio';
 // LangGraph imports
 import { createLangGraphAgent, streamLangGraphAgent } from '@/lib/ai/agents/langgraph-agent';
+import { getAgentConfig } from '@/lib/config/agents';
 import {
   convertVercelMessagesToLangChain,
   convertLangChainMessageToVercelMessage
@@ -172,22 +173,26 @@ export async function POST(request: Request) {
 
           // 🔍 LOG: Agent configuration
           console.log('\n=== LANGGRAPH AGENT SETUP ===');
+          const agentConfig = getAgentConfig('react_agent');
+
           console.log('🤖 Creating LangGraph agent with:', {
             userId: session.user.id,
             toolkitSlugs,
-            model: 'gpt-4o',
-            maxSteps: 5,
+            model: agentConfig.model,
+            temperature: agentConfig.parameters.temperature,
+            maxSteps: agentConfig.parameters.maxSteps,
             timestamp: new Date().toISOString(),
           });
 
           // Create LangGraph agent with Composio tools
+
           const { agent, maxSteps } = await createLangGraphAgent({
             userId: session.user.id,
             toolkitSlugs,
             systemPrompt: systemPrompt({ selectedChatModel, requestHints }),
-            model: 'gpt-4o', // Use OpenAI model for LangGraph
-            temperature: 0,
-            maxSteps: 5,
+            model: agentConfig.model,
+            temperature: agentConfig.parameters.temperature,
+            maxSteps: agentConfig.parameters.maxSteps,
           });
 
           // Convert Vercel messages to LangChain format
@@ -208,26 +213,37 @@ export async function POST(request: Request) {
           // Process the stream and convert back to AI SDK format
           let finalResponse: any = null;
           let toolCallCount = 0;
-          const textEncoder = new TextEncoder();
-
           console.log('\n=== AGENT EXECUTION STREAM ===');
-          
+          const activeChains: Array<{ name: string; startedAt: number }> = [];
+
           for await (const { event, data } of eventStream) {
             // 🔍 LOG: Stream events
             if (event === 'on_tool_start') {
               toolCallCount++;
               console.log(`🔧 Tool Call #${toolCallCount} START:`, {
-                toolName: data.name,
+                toolName: data.name || data.toolName || 'unknown-tool',
                 input: data.input,
                 timestamp: new Date().toISOString(),
               });
             } else if (event === 'on_tool_end') {
               console.log(`✅ Tool Call #${toolCallCount} END:`, {
-                toolName: data.name,
+                toolName: data.name || data.toolName || 'unknown-tool',
                 output: typeof data.output === 'string' ?
                   data.output.substring(0, 500) + (data.output.length > 500 ? '...' : '') :
                   data.output,
                 timestamp: new Date().toISOString(),
+              });
+            } else if (event === 'on_chain_start') {
+              const chainName = data.name || data.chain?.name || 'anonymous-chain';
+              const startTime = Date.now();
+              activeChains.push({ name: chainName, startedAt: startTime });
+
+              console.log(`🧵 Chain START (${activeChains.length} active):`, {
+                chainName,
+                inputKeys: Array.isArray(data.inputs)
+                  ? data.inputs.map((input: { key: string }) => input.key)
+                  : Object.keys(data.inputs || {}),
+                timestamp: new Date(startTime).toISOString(),
               });
             } else if (event === 'on_chat_model_stream') {
               // Stream content from the chat model
@@ -237,12 +253,30 @@ export async function POST(request: Request) {
                   textDelta: data.chunk.content,
                 });
               }
-            } else if (event === 'on_chain_end' && data.output?.messages) {
-              // Capture the final response for saving
-              finalResponse = data.output;
+            } 
+
+            if (event === 'on_chain_end') {
+              const chainName = data.name || data.chain?.name || 'anonymous-chain';
+              const endTime = Date.now();
+              const chainContext = activeChains.pop();
+
+              if (data.output?.messages) {
+                finalResponse = data.output;
+              }
+
               console.log('🏁 Chain execution completed:', {
-                messageCount: data.output.messages?.length || 0,
-                timestamp: new Date().toISOString(),
+                chainName,
+                messageCount: data.output?.messages?.length || 0,
+                durationMs:
+                  chainContext?.startedAt !== undefined
+                    ? endTime - chainContext.startedAt
+                    : undefined,
+                outputPreview: data.output?.messages?.map((msg: any) =>
+                  typeof msg.content === 'string'
+                    ? `${msg.content.slice(0, 120)}${msg.content.length > 120 ? '...' : ''}`
+                    : '[non-string content]',
+                ),
+                timestamp: new Date(endTime).toISOString(),
               });
             }
           }

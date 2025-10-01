@@ -1,11 +1,11 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { ChatOpenAI } from '@langchain/openai';
 import { SystemMessage } from '@langchain/core/messages';
-import { getComposioLangchainTools } from '@/lib/ai/tools/composio-langchain';
 import { getComposioToolsWithSearch } from '@/lib/ai/tools/composio-search';
 import { createToolSearchTool, createListToolsTool } from '@/lib/ai/tools/dynamic-tool-search';
 import { DynamicTool } from '@langchain/community/tools/dynamic';
 import { z } from 'zod';
+import { getAgentConfig } from '@/lib/config/agents';
 
 /**
  * Configuration for the LangGraph React Agent
@@ -64,28 +64,47 @@ const createWeatherTool = (): DynamicTool => {
  * This agent handles tool calling and reasoning while maintaining compatibility with AI SDK streaming
  */
 export async function createLangGraphAgent(config: LangGraphAgentConfig) {
-  const {
-    userId,
-    toolkitSlugs,
-    systemPrompt,
-    model = 'gpt-4o',
-    temperature = 0,
-    maxSteps = 5,
-  } = config;
+  const { userId, toolkitSlugs, systemPrompt, model, temperature, maxSteps } = config;
+
+  const agentConfig = getAgentConfig('react_agent');
+
+  const resolvedModel = model ?? agentConfig.model;
+  const resolvedTemperature = temperature ?? agentConfig.parameters.temperature;
+  const resolvedMaxSteps = maxSteps ?? agentConfig.parameters.maxSteps;
+  const resolvedSystemPrompt = systemPrompt ?? agentConfig.prompts.system;
 
   // Initialize the OpenAI chat model
   const chat = new ChatOpenAI({
-    model,
-    temperature,
+    model: resolvedModel,
+    temperature: resolvedTemperature,
   });
 
   // Fetch Composio tools using the enhanced search-based approach
   console.log('🔧 Fetching tools with search capability...');
+  const normalizedToolkitSlugs = toolkitSlugs.map((slug) => slug.toUpperCase());
+
+  const shouldSeedGithubTools = normalizedToolkitSlugs.some((slug) =>
+    slug.startsWith('GITHUB'),
+  );
+
+  const searchQueries: string[] = [];
+  const specificTools: string[] = [];
+
+  if (shouldSeedGithubTools) {
+    searchQueries.push('branch repository list');
+    specificTools.push('GITHUB_LIST_BRANCHES', 'GITHUB_GET_A_BRANCH');
+  }
+
+  if (normalizedToolkitSlugs.includes('GOOGLEDRIVE')) {
+    searchQueries.push('list files drive');
+    specificTools.push('GOOGLEDRIVE_LIST_FILES');
+  }
+
   const composioTools = await getComposioToolsWithSearch(userId, {
     toolkitSlugs,
-    searchQueries: ['branch repository list'], // Pre-search for branch tools
-    specificTools: ['GITHUB_LIST_BRANCHES', 'GITHUB_GET_A_BRANCH'], // Ensure branch tools are available
-    topToolsLimit: 20, // Get top 20 important tools
+    searchQueries,
+    specificTools,
+    topToolsLimit: 20,
     searchLimit: 10,
   });
   
@@ -97,7 +116,17 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
   const listToolsTool = createListToolsTool(composioTools);
   
   // Combine all tools - ensure proper typing
-  const tools = [weatherTool, toolSearchTool, listToolsTool, ...composioTools].filter(Boolean);
+  const annotateToolRunName = <T extends { name?: string }>(tool: T) => {
+    if (tool && typeof (tool as any).withConfig === 'function') {
+      const baseName = (tool as any).name ?? (tool as any)?.lc_kwargs?.name ?? 'unnamed-tool';
+      return (tool as any).withConfig({ runName: `tool:${baseName}` });
+    }
+    return tool;
+  };
+
+  const tools = [weatherTool, toolSearchTool, listToolsTool, ...composioTools]
+    .filter(Boolean)
+    .map((tool) => annotateToolRunName(tool));
   
   console.log('🛠️ LangGraph agent tools summary:', {
     weatherTool: 1,
@@ -112,12 +141,16 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
   const agent = createReactAgent({
     llm: chat,
     tools: tools as any[], // Type assertion for LangGraph compatibility
-    messageModifier: new SystemMessage(systemPrompt),
+    messageModifier: new SystemMessage(resolvedSystemPrompt),
+    name: 'react-agent',
+    description: 'LangGraph React agent for Composio chat',
   });
 
+  const namedAgent = agent.withConfig({ runName: 'react-agent' });
+
   return {
-    agent,
-    maxSteps,
+    agent: namedAgent,
+    maxSteps: resolvedMaxSteps,
     tools,
   };
 }
