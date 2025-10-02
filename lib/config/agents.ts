@@ -14,6 +14,10 @@ interface AgentConfig {
     system: string;
   };
   parameters: AgentParameters;
+  seeding?: {
+    driveList?: boolean;
+    tools?: string[];
+  };
 }
 
 interface AgentsConfig {

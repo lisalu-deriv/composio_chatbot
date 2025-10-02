@@ -186,6 +186,10 @@ export async function POST(request: Request) {
 
           // Create LangGraph agent with Composio tools
 
+          const requestHasExplicitFile = /\bfile\b|\.pdf|\.docx|\.pptx|\.doc\b|\.txt\b|\.csv\b|\.md\b/i.test(
+            message.content,
+          );
+
           const { agent, maxSteps } = await createLangGraphAgent({
             userId: session.user.id,
             toolkitSlugs,
@@ -193,6 +197,11 @@ export async function POST(request: Request) {
             model: agentConfig.model,
             temperature: agentConfig.parameters.temperature,
             maxSteps: agentConfig.parameters.maxSteps,
+            shouldSeedDriveListing:
+              agentConfig.seeding?.driveList !== undefined
+                ? agentConfig.seeding.driveList && !requestHasExplicitFile
+                : !requestHasExplicitFile,
+            enableToolSearch: !requestHasExplicitFile,
           });
 
           // Convert Vercel messages to LangChain format
@@ -216,35 +225,53 @@ export async function POST(request: Request) {
           console.log('\n=== AGENT EXECUTION STREAM ===');
           const activeChains: Array<{ name: string; startedAt: number }> = [];
 
+          const resolveToolName = (payload: any): string => {
+            const candidates = [
+              payload?.name,
+              payload?.toolName,
+              payload?.tool?.name,
+              payload?.tool?.lc_kwargs?.name,
+              payload?.tool?.config?.runName,
+              payload?.config?.runName,
+              payload?.runName,
+              payload?.output?.name,
+              payload?.input?.name,
+              payload?.invocation?.name,
+              payload?.invocation?.tool?.name,
+              payload?.serialized?.kwargs?.name,
+            ];
+
+            const match = candidates.find(
+              (value) => typeof value === 'string' && value.trim().length > 0,
+            );
+
+            return match ?? 'unknown-tool';
+          };
+
           for await (const { event, data } of eventStream) {
             // 🔍 LOG: Stream events
             if (event === 'on_tool_start') {
               toolCallCount++;
+              const toolName = resolveToolName(data);
               console.log(`🔧 Tool Call #${toolCallCount} START:`, {
-                toolName: data.name || data.toolName || 'unknown-tool',
+                toolName,
                 input: data.input,
                 timestamp: new Date().toISOString(),
               });
             } else if (event === 'on_tool_end') {
+              const toolName = resolveToolName(data);
               console.log(`✅ Tool Call #${toolCallCount} END:`, {
-                toolName: data.name || data.toolName || 'unknown-tool',
+                toolName,
                 output: typeof data.output === 'string' ?
                   data.output.substring(0, 500) + (data.output.length > 500 ? '...' : '') :
                   data.output,
                 timestamp: new Date().toISOString(),
               });
             } else if (event === 'on_chain_start') {
+              // Suppress noisy chain-start logs
               const chainName = data.name || data.chain?.name || 'anonymous-chain';
               const startTime = Date.now();
               activeChains.push({ name: chainName, startedAt: startTime });
-
-              console.log(`🧵 Chain START (${activeChains.length} active):`, {
-                chainName,
-                inputKeys: Array.isArray(data.inputs)
-                  ? data.inputs.map((input: { key: string }) => input.key)
-                  : Object.keys(data.inputs || {}),
-                timestamp: new Date(startTime).toISOString(),
-              });
             } else if (event === 'on_chat_model_stream') {
               // Stream content from the chat model
               if (data.chunk?.content) {
@@ -256,6 +283,7 @@ export async function POST(request: Request) {
             } 
 
             if (event === 'on_chain_end') {
+              // Suppress chain-end logs unless we actually captured a final response
               const chainName = data.name || data.chain?.name || 'anonymous-chain';
               const endTime = Date.now();
               const chainContext = activeChains.pop();
@@ -263,21 +291,23 @@ export async function POST(request: Request) {
               if (data.output?.messages) {
                 finalResponse = data.output;
               }
-
-              console.log('🏁 Chain execution completed:', {
-                chainName,
-                messageCount: data.output?.messages?.length || 0,
-                durationMs:
-                  chainContext?.startedAt !== undefined
-                    ? endTime - chainContext.startedAt
-                    : undefined,
-                outputPreview: data.output?.messages?.map((msg: any) =>
-                  typeof msg.content === 'string'
-                    ? `${msg.content.slice(0, 120)}${msg.content.length > 120 ? '...' : ''}`
-                    : '[non-string content]',
-                ),
-                timestamp: new Date(endTime).toISOString(),
-              });
+              // Only log chain end if it contains a message payload (high-signal)
+              if (data.output?.messages?.length) {
+                console.log('🏁 Chain execution completed:', {
+                  chainName,
+                  messageCount: data.output?.messages?.length || 0,
+                  durationMs:
+                    chainContext?.startedAt !== undefined
+                      ? endTime - chainContext.startedAt
+                      : undefined,
+                  outputPreview: data.output?.messages?.map((msg: any) =>
+                    typeof msg.content === 'string'
+                      ? `${msg.content.slice(0, 120)}${msg.content.length > 120 ? '...' : ''}`
+                      : '[non-string content]',
+                  ),
+                  timestamp: new Date(endTime).toISOString(),
+                });
+              }
             }
           }
 

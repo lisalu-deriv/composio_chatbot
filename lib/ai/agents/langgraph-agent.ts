@@ -7,6 +7,58 @@ import { DynamicTool } from '@langchain/community/tools/dynamic';
 import { z } from 'zod';
 import { getAgentConfig } from '@/lib/config/agents';
 
+const enrichDownloadResponse = async (result: any) => {
+  const downloadedContent = result?.data?.downloaded_file_content;
+
+  if (downloadedContent?.s3url && !downloadedContent.content) {
+    console.log('📦 Attempting to fetch Composio S3 URL:', downloadedContent.s3url);
+
+    try {
+      const response = await fetch(downloadedContent.s3url);
+      const text = await response.text();
+
+      console.log('📥 Fetched content from Composio S3 URL:', {
+        url: downloadedContent.s3url,
+        preview: text.slice(0, 500),
+        length: text.length,
+        timestamp: new Date().toISOString(),
+      });
+
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          downloaded_file_content: {
+            ...downloadedContent,
+            content: text,
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Failed to fetch content from Composio S3 URL:', error);
+    }
+  }
+
+  return result;
+};
+
+const formatDownloadSummary = (data: any): string | null => {
+  const download = data?.downloaded_file_content;
+
+  if (!download?.content) {
+    return null;
+  }
+
+  const name = data?.name ?? 'Unknown file';
+  const mimeType = data?.mimeType ?? download?.mimeType ?? 'unknown';
+
+  return [
+    `File: ${name} (${mimeType})`,
+    '',
+    download.content,
+  ].join('\n');
+};
+
 /**
  * Configuration for the LangGraph React Agent
  */
@@ -17,6 +69,8 @@ export interface LangGraphAgentConfig {
   model?: string;
   temperature?: number;
   maxSteps?: number;
+  shouldSeedDriveListing?: boolean;
+  enableToolSearch?: boolean;
 }
 
 /**
@@ -64,7 +118,16 @@ const createWeatherTool = (): DynamicTool => {
  * This agent handles tool calling and reasoning while maintaining compatibility with AI SDK streaming
  */
 export async function createLangGraphAgent(config: LangGraphAgentConfig) {
-  const { userId, toolkitSlugs, systemPrompt, model, temperature, maxSteps } = config;
+  const {
+    userId,
+    toolkitSlugs,
+    systemPrompt,
+    model,
+    temperature,
+    maxSteps,
+    shouldSeedDriveListing = true,
+    enableToolSearch = true,
+  } = config;
 
   const agentConfig = getAgentConfig('react_agent');
 
@@ -72,6 +135,9 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
   const resolvedTemperature = temperature ?? agentConfig.parameters.temperature;
   const resolvedMaxSteps = maxSteps ?? agentConfig.parameters.maxSteps;
   const resolvedSystemPrompt = systemPrompt ?? agentConfig.prompts.system;
+  const resolvedDriveSeeding = shouldSeedDriveListing ?? agentConfig.seeding?.driveList ?? true;
+  const additionalSeedTools = agentConfig.seeding?.tools ?? [];
+  const resolvedToolSearch = enableToolSearch;
 
   // Initialize the OpenAI chat model
   const chat = new ChatOpenAI({
@@ -91,13 +157,23 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
   const specificTools: string[] = [];
 
   if (shouldSeedGithubTools) {
-    searchQueries.push('branch repository list');
     specificTools.push('GITHUB_LIST_BRANCHES', 'GITHUB_GET_A_BRANCH');
+    if (resolvedToolSearch) {
+      searchQueries.push('branch repository list');
+    }
   }
 
-  if (normalizedToolkitSlugs.includes('GOOGLEDRIVE')) {
-    searchQueries.push('list files drive');
+  if (normalizedToolkitSlugs.includes('GOOGLEDRIVE') && resolvedDriveSeeding) {
     specificTools.push('GOOGLEDRIVE_LIST_FILES');
+    if (resolvedToolSearch) {
+      searchQueries.push('list files drive');
+    }
+  }
+
+  for (const toolName of additionalSeedTools) {
+    if (!specificTools.includes(toolName)) {
+      specificTools.push(toolName);
+    }
   }
 
   const composioTools = await getComposioToolsWithSearch(userId, {
@@ -116,17 +192,38 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
   const listToolsTool = createListToolsTool(composioTools);
   
   // Combine all tools - ensure proper typing
-  const annotateToolRunName = <T extends { name?: string }>(tool: T) => {
-    if (tool && typeof (tool as any).withConfig === 'function') {
-      const baseName = (tool as any).name ?? (tool as any)?.lc_kwargs?.name ?? 'unnamed-tool';
-      return (tool as any).withConfig({ runName: `tool:${baseName}` });
-    }
-    return tool;
-  };
-
   const tools = [weatherTool, toolSearchTool, listToolsTool, ...composioTools]
     .filter(Boolean)
-    .map((tool) => annotateToolRunName(tool));
+    .map((tool) => {
+      if (tool && typeof (tool as any).func === 'function') {
+        const originalFunc = (tool as any).func;
+
+        (tool as any).func = async (...args: unknown[]) => {
+          const output = await originalFunc.apply(tool, args);
+          const enrichedOutput = await enrichDownloadResponse(output);
+
+          const summary = formatDownloadSummary(enrichedOutput?.data);
+
+          if (summary) {
+            return {
+              ...enrichedOutput,
+              data: {
+                ...enrichedOutput.data,
+                summary,
+                downloaded_file_content: {
+                  ...enrichedOutput.data.downloaded_file_content,
+                  summary,
+                },
+              },
+            };
+          }
+
+          return enrichedOutput;
+        };
+      }
+
+      return tool;
+    });
   
   console.log('🛠️ LangGraph agent tools summary:', {
     weatherTool: 1,
@@ -146,7 +243,8 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
     description: 'LangGraph React agent for Composio chat',
   });
 
-  const namedAgent = agent.withConfig({ runName: 'react-agent' });
+  // Name the top-level agent runnable (helps reduce anonymous-chain spam)
+  const namedAgent = agent.withConfig({ runName: 'prompt-chain:react-agent' });
 
   return {
     agent: namedAgent,
