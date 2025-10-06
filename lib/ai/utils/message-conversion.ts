@@ -1,7 +1,7 @@
-import { Message as VercelChatMessage } from 'ai';
+import type { Message as VercelChatMessage } from 'ai';
 import {
   AIMessage,
-  BaseMessage,
+  type BaseMessage,
   ChatMessage,
   HumanMessage,
   SystemMessage,

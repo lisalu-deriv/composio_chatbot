@@ -26,7 +26,7 @@ export async function searchComposioTools(
   userId: string, 
   searchQuery: string, 
   toolkitSlugs?: string[], 
-  limit: number = 10
+  limit = 10
 ) {
   try {
     console.log('🔍 Searching for Composio tools:', {

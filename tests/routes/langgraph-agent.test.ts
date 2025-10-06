@@ -1,6 +1,5 @@
 import { generateUUID } from '@/lib/utils';
 import { expect, test } from '../fixtures';
-import { TEST_PROMPTS } from '../prompts/routes';
 
 test.describe.serial('/api/chat with LangGraph', () => {
   test('Ada can invoke chat generation with LangGraph agent', async ({ adaContext }) => {

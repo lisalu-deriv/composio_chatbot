@@ -1,5 +1,4 @@
 import { DynamicTool } from '@langchain/community/tools/dynamic';
-import { z } from 'zod';
 import { searchComposioTools, getSpecificComposioTools } from './composio-search';
 
 /**
@@ -65,7 +64,7 @@ export function createToolSearchTool(userId: string): DynamicTool {
         
         console.log('🔍 Parsed params:', { searchQuery, specificTools, toolkits, limit });
 
-        let foundTools: any[] = [];
+        const foundTools: any[] = [];
 
         // Search for tools if search query is provided
         if (searchQuery) {

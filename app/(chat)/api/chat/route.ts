@@ -213,7 +213,7 @@ export async function POST(request: Request) {
           console.log('\n=== MESSAGES TO AGENT ===');
           console.log('💬 LangChain messages:', langchainMessages.map(msg => ({
             type: msg._getType(),
-            content: typeof msg.content === 'string' ? msg.content.substring(0, 200) + '...' : '[complex content]',
+            content: typeof msg.content === 'string' ? `${msg.content.substring(0, 200)}...` : '[complex content]',
           })));
 
           // Stream the LangGraph agent execution
@@ -401,7 +401,7 @@ export async function POST(request: Request) {
                     partsCount: assistantMessage.parts?.length || 0,
                     content: assistantMessage.parts
                       ?.filter(part => part.type === 'text')
-                      ?.map(part => part.text?.substring(0, 200) + '...')
+                      ?.map(part => `${part.text?.substring(0, 200)}...`)
                       ?.join(' ') || '[no text content]',
                     toolCalls: response.messages
                       .filter(msg => msg.role === 'assistant' && 'toolInvocations' in msg)

@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { ChatOpenAI } from '@langchain/openai';
 import { SystemMessage } from '@langchain/core/messages';
@@ -114,6 +115,85 @@ const createWeatherTool = (): DynamicTool => {
 };
 
 /**
+ * Creates a tool that fetches public or pre-signed S3 content for Composio downloads
+ */
+const createComposioS3FetcherTool = (): DynamicTool => {
+  const schema = z.object({
+    url: z.string().url(),
+    format: z.enum(['text', 'json', 'base64']).default('text'),
+    includeMetadata: z.boolean().default(true),
+  });
+
+  return new DynamicTool({
+    name: 'fetchComposioS3Url',
+    description:
+      'Retrieve the content referenced by a Composio tool response S3 URL. Use when downloaded_file_content.s3url is present.',
+    func: async (rawInput: string) => {
+      try {
+        const input = (() => {
+          try {
+            return JSON.parse(rawInput) as unknown;
+          } catch {
+            return { url: rawInput };
+          }
+        })();
+
+        const parsed = schema.parse(input);
+
+        const response = await fetch(parsed.url);
+
+        if (!response.ok) {
+          throw new Error(`Failed to download content. HTTP status: ${response.status}`);
+        }
+
+        const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
+        const fetchedAt = new Date().toISOString();
+
+        let content: string;
+        switch (parsed.format) {
+          case 'json': {
+            const json = await response.json();
+            content = JSON.stringify(json);
+            break;
+          }
+          case 'base64': {
+            const arrayBuffer = await response.arrayBuffer();
+            content = Buffer.from(arrayBuffer).toString('base64');
+            break;
+          }
+          default: {
+            content = await response.text();
+          }
+        }
+
+        const payload = {
+          url: parsed.url,
+          format: parsed.format,
+          content,
+        };
+
+        if (!parsed.includeMetadata) {
+          return JSON.stringify(payload);
+        }
+
+        return JSON.stringify({
+          ...payload,
+          metadata: {
+            contentType,
+            contentLength: response.headers.get('content-length'),
+            fetchedAt,
+            status: response.status,
+          },
+        });
+      } catch (error) {
+        console.error('❌ S3 fetch tool error:', error);
+        throw error;
+      }
+    },
+  });
+};
+
+/**
  * Creates a LangGraph React Agent with Composio tools integration
  * This agent handles tool calling and reasoning while maintaining compatibility with AI SDK streaming
  */
@@ -186,13 +266,14 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
   
   // Create weather tool
   const weatherTool = createWeatherTool();
+  const fetchS3ContentTool = createComposioS3FetcherTool();
   
   // Create dynamic tool search capability
   const toolSearchTool = createToolSearchTool(userId);
   const listToolsTool = createListToolsTool(composioTools);
   
   // Combine all tools - ensure proper typing
-  const tools = [weatherTool, toolSearchTool, listToolsTool, ...composioTools]
+  const tools = [weatherTool, fetchS3ContentTool, toolSearchTool, listToolsTool, ...composioTools]
     .filter(Boolean)
     .map((tool) => {
       if (tool && typeof (tool as any).func === 'function') {
@@ -227,6 +308,7 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
   
   console.log('🛠️ LangGraph agent tools summary:', {
     weatherTool: 1,
+    fetchS3ContentTool: 1,
     toolSearchTool: 1,
     listToolsTool: 1,
     composioTools: composioTools.length,
@@ -259,7 +341,7 @@ export async function createLangGraphAgent(config: LangGraphAgentConfig) {
 export async function executeLangGraphAgent(
   agent: any,
   messages: any[],
-  maxSteps: number = 5
+  maxSteps = 5
 ) {
   try {
     // Execute the agent with the message history
@@ -286,7 +368,7 @@ export async function executeLangGraphAgent(
 export async function streamLangGraphAgent(
   agent: any,
   messages: any[],
-  maxSteps: number = 5
+  maxSteps = 5
 ) {
   try {
     // 🔍 LOG: Starting agent stream
