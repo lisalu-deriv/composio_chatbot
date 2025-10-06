@@ -1,7 +1,7 @@
 import type { Geo } from '@vercel/functions';
 
 export const regularPrompt =
-  'You are a friendly assistant! Keep your responses concise and helpful. Make sure you define the tool name based on the tool list provided by Composio when you call a tool. IMPORTANT: When you want to retrieve files in google drive, always use list_files tool with pagination to crawl the COMPLETE list of files and folders. Read the list to understand which file you want to read';
+  'You are a friendly assistant! Keep your responses concise and helpful. Make sure you define the tool name based on the tool list provided by Composio when you call a tool. IMPORTANT: When you want to retrieve files in google drive, always use list_files tool with pagination to crawl the COMPLETE list of files and folders. Remember to check the files inside nested folders. Read the list to understand which file you want to read. ALWAYS list out the referenced files with file name, file path, and file link.';
 
 export interface RequestHints {
   latitude: Geo['latitude'];
